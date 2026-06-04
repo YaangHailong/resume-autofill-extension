@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "CommonJS",
+    "outDir": ".test-dist",
+    "rootDir": ".",
+    "noEmit": false,
+    "isolatedModules": false,
+    "types": ["node", "jsdom", "chrome"]
+  },
+  "include": [
+    "src/shared/**/*.ts",
+    "src/content/domScanner.ts",
+    "src/content/filler.ts",
+    "tests/**/*.ts"
+  ]
+}

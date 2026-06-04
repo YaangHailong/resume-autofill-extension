@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "简历自动填写助手",
+  "version": "0.1.0",
+  "description": "读取本地简历模板，预览并填写网页简历表单。",
+  "permissions": ["activeTab", "storage", "scripting"],
+  "host_permissions": ["<all_urls>"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "简历自动填写"
+  },
+  "options_page": "options.html",
+  "background": {
+    "service_worker": "assets/background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["assets/content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

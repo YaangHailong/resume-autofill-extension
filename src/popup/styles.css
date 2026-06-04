@@ -1,0 +1,107 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  width: 340px;
+  margin: 0;
+  color: #17202a;
+  background: #f6f8fa;
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+button {
+  font: inherit;
+}
+
+.popupShell {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+}
+
+.eyebrow {
+  margin: 0 0 4px;
+  color: #557085;
+  font-size: 12px;
+}
+
+h1 {
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.25;
+  letter-spacing: 0;
+}
+
+.statusBox {
+  display: grid;
+  gap: 2px;
+  padding: 12px;
+  border: 1px solid #d5dde6;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.statusBox strong {
+  font-size: 28px;
+  line-height: 1.1;
+}
+
+.statusBox span,
+.message {
+  color: #566575;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.message {
+  margin: 0;
+}
+
+.message.success {
+  color: #1e6b39;
+}
+
+.message.error {
+  color: #9a3030;
+}
+
+.message.warning {
+  padding: 9px 10px;
+  border: 1px solid #efd8a5;
+  border-radius: 6px;
+  background: #fff8e8;
+  color: #6d4a00;
+}
+
+.actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.primaryButton,
+.secondaryButton {
+  min-height: 38px;
+  border-radius: 6px;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+.primaryButton {
+  border: 1px solid #1d6f8f;
+  background: #1d6f8f;
+  color: #fff;
+}
+
+.primaryButton:disabled {
+  opacity: 0.62;
+  cursor: not-allowed;
+}
+
+.secondaryButton {
+  border: 1px solid #1d6f8f;
+  background: #fff;
+  color: #1d6f8f;
+}
+
