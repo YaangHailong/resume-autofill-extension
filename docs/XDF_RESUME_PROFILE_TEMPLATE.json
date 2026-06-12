@@ -1,0 +1,66 @@
+{
+  "version": 2,
+  "personalInfo": {
+    "fullName": "",
+    "gender": "",
+    "birthDate": "",
+    "email": "",
+    "phone": "",
+    "workYears": "",
+    "photoNote": ""
+  },
+  "jobIntention": {
+    "currentIndustry": "",
+    "currentOccupation": "",
+    "currentCity": "",
+    "currentMonthlySalary": "",
+    "expectedIndustry": "",
+    "expectedOccupation": "",
+    "expectedCity": "",
+    "expectedMonthlySalary": "",
+    "availability": ""
+  },
+  "education": {
+    "id": "education",
+    "title": "教育经历",
+    "items": [
+      {
+        "id": "edu-1",
+        "schoolName": "",
+        "startDate": "",
+        "endDate": "",
+        "majorName": "",
+        "educationLevel": "",
+        "degree": ""
+      }
+    ]
+  },
+  "work": {
+    "id": "work",
+    "title": "工作经历",
+    "items": [
+      {
+        "id": "work-1",
+        "unitName": "",
+        "positionName": "",
+        "startDate": "",
+        "endDate": "",
+        "responsibilities": ""
+      }
+    ]
+  },
+  "languages": {
+    "id": "languages",
+    "title": "语言能力",
+    "items": [
+      {
+        "id": "lang-1",
+        "languageType": "",
+        "mastery": "",
+        "listeningSpeaking": "",
+        "readingWriting": ""
+      }
+    ]
+  },
+  "updatedAt": "2026-06-04T00:00:00.000Z"
+}

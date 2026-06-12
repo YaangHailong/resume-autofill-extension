@@ -31,8 +31,9 @@ export default function App(): JSX.Element {
       if (!tab?.id) {
         throw new Error("没有找到当前标签页。");
       }
+      ensurePageCanReceiveContentScript(tab.url ?? "");
 
-      const response = await sendTabMessage(tab.id, { type: "RESUME_AUTOFILL_SCAN" });
+      const response = await sendScanMessage(tab.id);
       if (!response.ok) {
         throw new Error(response.message ?? "扫描失败。");
       }
@@ -114,3 +115,57 @@ async function sendTabMessage(
   });
 }
 
+async function sendScanMessage(tabId: number): Promise<ScanResponse> {
+  const message: RuntimeMessage = { type: "RESUME_AUTOFILL_SCAN" };
+  try {
+    return await sendTabMessage(tabId, message);
+  } catch (error) {
+    if (!isMissingContentScriptError(error)) {
+      throw error;
+    }
+  }
+
+  await injectContentScript(tabId);
+  return sendTabMessage(tabId, message);
+}
+
+async function injectContentScript(tabId: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    chrome.scripting.executeScript(
+      {
+        target: { tabId },
+        files: ["assets/content.js"]
+      },
+      () => {
+        const error = chrome.runtime.lastError;
+        if (error) {
+          reject(new Error(toFriendlyInjectionError(error.message)));
+          return;
+        }
+        resolve();
+      }
+    );
+  });
+}
+
+function ensurePageCanReceiveContentScript(url: string): void {
+  if (/^(chrome|edge|about|devtools|chrome-extension):\/\//i.test(url)) {
+    throw new Error("当前页面不允许注入扩展脚本，请切换到普通 http/https 网页后再扫描。");
+  }
+}
+
+function isMissingContentScriptError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    message.includes("Receiving end does not exist") ||
+    message.includes("Could not establish connection")
+  );
+}
+
+function toFriendlyInjectionError(message: string | undefined): string {
+  const text = message ?? "无法注入内容脚本。";
+  if (/file:\/\//i.test(text) || text.includes("Cannot access contents of url")) {
+    return "无法注入当前页面。如果你打开的是本地 file:// 文件，请到 chrome://extensions 的扩展详情里开启“允许访问文件网址”，或改用 http/https 页面测试。";
+  }
+  return `无法注入内容脚本：${text}`;
+}

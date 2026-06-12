@@ -64,6 +64,28 @@ h2 {
   font-size: 13px;
 }
 
+.helpText {
+  margin: 10px 0 0;
+  color: #5a6878;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.switchField {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 14px;
+  color: #34465a;
+  font-size: 14px;
+}
+
+.switchField input {
+  width: 18px;
+  height: 18px;
+  accent-color: #1d6f8f;
+}
+
 .primaryButton,
 .secondaryButton,
 .textButton {
@@ -236,4 +258,3 @@ h2 {
     grid-template-columns: 1fr;
   }
 }
-

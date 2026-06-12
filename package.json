@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "vite build && node scripts/build-content.cjs",
+    "ark:server": "node scripts/ark-match-server.cjs",
     "typecheck": "tsc --noEmit",
     "test": "npm run test:unit",
     "test:unit": "tsc -p tsconfig.test.json && node .test-dist/tests/run-unit.js",

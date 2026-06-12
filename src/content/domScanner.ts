@@ -2,7 +2,7 @@ import { sectionForText } from "../shared/fieldDictionary";
 import { AddButtonCandidate, FieldCandidate, FieldKind } from "../shared/types";
 
 const FIELD_SELECTOR = [
-  "input:not([type='hidden']):not([type='submit']):not([type='button']):not([type='reset'])",
+  "input:not([type='hidden']):not([type='submit']):not([type='button']):not([type='reset']):not([type='file'])",
   "textarea",
   "select",
   "[contenteditable='true']",
@@ -14,7 +14,9 @@ const ADD_BUTTON_SELECTOR = [
   "a",
   "[role='button']",
   "input[type='button']",
-  "input[type='submit']"
+  "input[type='submit']",
+  "[id$='_addButton']",
+  "[id*='addButton']"
 ].join(",");
 
 const FIELD_ID_ATTR = "data-resume-autofill-field";
@@ -62,9 +64,14 @@ export function scanAddButtons(root: ParentNode = document): AddButtonCandidate[
     .map((element, index) => {
       const text = getButtonText(element);
       const contextText = collectContextText(element);
+      const ownSignalText = compactText(
+        `${text} ${getAttribute(element, "id")} ${getAttribute(element, "name")} ${
+          element.className || ""
+        } ${getAttribute(element, "aria-label")} ${getAttribute(element, "title")}`
+      );
       const looksLikeAdd =
-        /添加|新增|增加|add|new|append|create/i.test(`${text} ${contextText}`) &&
-        !/submit|提交|保存|下一步|next/i.test(text);
+        /添加|新增|增加|add|new|append|create/i.test(ownSignalText) &&
+        !/submit|提交|保存|下一步|next|取消|暂存|备案|隐私|privacy|beian/i.test(text);
 
       if (!looksLikeAdd) {
         return undefined;
@@ -148,6 +155,11 @@ function findLabelText(element: HTMLElement): string {
     }
   }
 
+  const formItemText = findFormItemLabelText(element);
+  if (formItemText) {
+    return formItemText;
+  }
+
   return findNearbyLabelText(element);
 }
 
@@ -196,12 +208,18 @@ function getButtonText(element: HTMLElement): string {
   );
 }
 
+function findFormItemLabelText(element: HTMLElement): string {
+  const formItem = element.closest(".form-item");
+  const label = formItem?.querySelector<HTMLElement>(".form-item__text, label");
+  return label ? cleanLabelText(label.textContent ?? "") : "";
+}
+
 function findNearbyLabelText(element: HTMLElement): string {
   let current: HTMLElement = element;
   let parent = element.parentElement;
   let depth = 0;
 
-  while (parent && depth < 4) {
+  while (parent && depth < 8) {
     const siblings = Array.from(parent.children) as HTMLElement[];
     const currentIndex = siblings.indexOf(current);
 

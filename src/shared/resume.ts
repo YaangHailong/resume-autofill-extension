@@ -1,104 +1,73 @@
 import {
-  BasicInfo,
-  CertificateItem,
   EducationItem,
-  ExperienceItem,
-  LanguageItem,
-  LinkItem,
-  ProjectItem,
+  JobIntention,
+  LanguageAbilityItem,
+  PersonalInfo,
   ResumeFlatField,
   ResumeProfile,
   ResumeSection,
   ResumeSectionName,
-  SkillItem
+  WorkExperienceItem
 } from "./types";
+
+type LegacyRecord = Record<string, unknown>;
 
 export function createId(prefix = "item"): string {
   return `${prefix}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
-export const emptyBasics: BasicInfo = {
+export const emptyPersonalInfo: PersonalInfo = {
   fullName: "",
-  preferredName: "",
-  phone: "",
+  gender: "",
+  birthDate: "",
   email: "",
-  location: "",
-  website: "",
-  github: "",
-  linkedin: "",
-  summary: ""
+  phone: "",
+  workYears: "",
+  photoNote: ""
+};
+
+export const emptyJobIntention: JobIntention = {
+  currentIndustry: "",
+  currentOccupation: "",
+  currentCity: "",
+  currentMonthlySalary: "",
+  expectedIndustry: "",
+  expectedOccupation: "",
+  expectedCity: "",
+  expectedMonthlySalary: "",
+  availability: ""
 };
 
 export function createEducationItem(): EducationItem {
   return {
     id: createId("edu"),
-    school: "",
-    degree: "",
-    major: "",
+    schoolName: "",
     startDate: "",
     endDate: "",
-    gpa: "",
-    description: ""
+    majorName: "",
+    educationLevel: "",
+    degree: ""
   };
 }
 
-export function createExperienceItem(prefix = "exp"): ExperienceItem {
+export function createWorkExperienceItem(prefix = "work"): WorkExperienceItem {
   return {
     id: createId(prefix),
-    company: "",
-    title: "",
-    location: "",
+    unitName: "",
+    positionName: "",
     startDate: "",
     endDate: "",
-    description: ""
+    responsibilities: ""
   };
 }
 
-export function createProjectItem(): ProjectItem {
-  return {
-    id: createId("project"),
-    name: "",
-    role: "",
-    technologies: "",
-    startDate: "",
-    endDate: "",
-    link: "",
-    description: ""
-  };
-}
-
-export function createSkillItem(): SkillItem {
-  return {
-    id: createId("skill"),
-    category: "",
-    values: ""
-  };
-}
-
-export function createCertificateItem(): CertificateItem {
-  return {
-    id: createId("cert"),
-    name: "",
-    issuer: "",
-    date: "",
-    credentialId: "",
-    url: ""
-  };
-}
-
-export function createLanguageItem(): LanguageItem {
+export function createLanguageAbilityItem(): LanguageAbilityItem {
   return {
     id: createId("lang"),
-    language: "",
-    proficiency: ""
-  };
-}
-
-export function createLinkItem(): LinkItem {
-  return {
-    id: createId("link"),
-    label: "",
-    url: ""
+    languageType: "",
+    mastery: "",
+    listeningSpeaking: "",
+    readingWriting: ""
   };
 }
 
@@ -112,46 +81,56 @@ function createSection<T>(
 
 export function createDefaultResumeProfile(): ResumeProfile {
   return {
-    version: 1,
-    basics: { ...emptyBasics },
+    version: 2,
+    personalInfo: { ...emptyPersonalInfo },
+    jobIntention: { ...emptyJobIntention },
     education: createSection("education", "教育经历", [createEducationItem()]),
-    work: createSection("work", "工作经历", [createExperienceItem("work")]),
-    internships: createSection("internships", "实习经历", [
-      createExperienceItem("intern")
-    ]),
-    projects: createSection("projects", "项目经历", [createProjectItem()]),
-    skills: createSection("skills", "技能", [createSkillItem()]),
-    certificates: createSection("certificates", "证书", [
-      createCertificateItem()
-    ]),
-    languages: createSection("languages", "语言", [createLanguageItem()]),
-    links: createSection("links", "个人链接", [createLinkItem()]),
+    work: createSection("work", "工作经历", [createWorkExperienceItem("work")]),
+    languages: createSection("languages", "语言能力", [createLanguageAbilityItem()]),
     updatedAt: new Date().toISOString()
   };
 }
 
 export function normalizeResumeProfile(input: Partial<ResumeProfile>): ResumeProfile {
   const fallback = createDefaultResumeProfile();
+  const legacy = input as LegacyRecord;
+  const legacyBasics = readRecord(legacy.basics);
+
   return {
     ...fallback,
     ...input,
-    version: 1,
-    basics: { ...fallback.basics, ...(input.basics ?? {}) },
-    education: normalizeSection(input.education, fallback.education),
-    work: normalizeSection(input.work, fallback.work),
-    internships: normalizeSection(input.internships, fallback.internships),
-    projects: normalizeSection(input.projects, fallback.projects),
-    skills: normalizeSection(input.skills, fallback.skills),
-    certificates: normalizeSection(input.certificates, fallback.certificates),
-    languages: normalizeSection(input.languages, fallback.languages),
-    links: normalizeSection(input.links, fallback.links),
+    version: 2,
+    personalInfo: {
+      ...fallback.personalInfo,
+      ...(input.personalInfo ?? {}),
+      fullName: readString(input.personalInfo?.fullName, legacyBasics.fullName),
+      email: readString(input.personalInfo?.email, legacyBasics.email),
+      phone: readString(input.personalInfo?.phone, legacyBasics.phone)
+    },
+    jobIntention: { ...fallback.jobIntention, ...(input.jobIntention ?? {}) },
+    education: normalizeSection(
+      input.education as ResumeSection<Partial<EducationItem>> | undefined,
+      fallback.education,
+      normalizeEducationItem
+    ),
+    work: normalizeSection(
+      input.work as ResumeSection<Partial<WorkExperienceItem>> | undefined,
+      fallback.work,
+      normalizeWorkExperienceItem
+    ),
+    languages: normalizeSection(
+      input.languages as ResumeSection<Partial<LanguageAbilityItem>> | undefined,
+      fallback.languages,
+      normalizeLanguageAbilityItem
+    ),
     updatedAt: input.updatedAt ?? fallback.updatedAt
   };
 }
 
 function normalizeSection<T>(
-  input: ResumeSection<T> | undefined,
-  fallback: ResumeSection<T>
+  input: ResumeSection<Partial<T>> | undefined,
+  fallback: ResumeSection<T>,
+  normalizeItem: (item: Partial<T> & LegacyRecord) => T
 ): ResumeSection<T> {
   if (!input || !Array.isArray(input.items)) {
     return fallback;
@@ -159,7 +138,44 @@ function normalizeSection<T>(
   return {
     id: input.id || fallback.id,
     title: input.title || fallback.title,
-    items: input.items.length > 0 ? input.items : fallback.items
+    items: input.items.length > 0 ? input.items.map((item) => normalizeItem(item as Partial<T> & LegacyRecord)) : fallback.items
+  };
+}
+
+function normalizeEducationItem(item: Partial<EducationItem> & LegacyRecord): EducationItem {
+  return {
+    id: readString(item.id, createId("edu")),
+    schoolName: readString(item.schoolName, item.school),
+    startDate: readString(item.startDate),
+    endDate: readString(item.endDate),
+    majorName: readString(item.majorName, item.major),
+    educationLevel: readString(item.educationLevel),
+    degree: readString(item.degree)
+  };
+}
+
+function normalizeWorkExperienceItem(
+  item: Partial<WorkExperienceItem> & LegacyRecord
+): WorkExperienceItem {
+  return {
+    id: readString(item.id, createId("work")),
+    unitName: readString(item.unitName, item.company),
+    positionName: readString(item.positionName, item.title),
+    startDate: readString(item.startDate),
+    endDate: readString(item.endDate),
+    responsibilities: readString(item.responsibilities, item.description)
+  };
+}
+
+function normalizeLanguageAbilityItem(
+  item: Partial<LanguageAbilityItem> & LegacyRecord
+): LanguageAbilityItem {
+  return {
+    id: readString(item.id, createId("lang")),
+    languageType: readString(item.languageType, item.language),
+    mastery: readString(item.mastery, item.proficiency),
+    listeningSpeaking: readString(item.listeningSpeaking),
+    readingWriting: readString(item.readingWriting)
   };
 }
 
@@ -170,77 +186,117 @@ export function isProfileEffectivelyEmpty(profile: ResumeProfile): boolean {
 export function flattenResumeProfile(profile: ResumeProfile): ResumeFlatField[] {
   const fields: ResumeFlatField[] = [];
 
-  addBasic(fields, "basics.fullName", "姓名", "fullName", profile.basics.fullName);
-  addBasic(
+  addTopField(fields, "personalInfo.fullName", "姓名", "fullName", profile.personalInfo.fullName);
+  addTopField(fields, "personalInfo.gender", "性别", "gender", profile.personalInfo.gender);
+  addTopField(
     fields,
-    "basics.preferredName",
-    "常用名",
-    "preferredName",
-    profile.basics.preferredName
+    "personalInfo.birthDate",
+    "出生日期",
+    "birthDate",
+    profile.personalInfo.birthDate
   );
-  addBasic(fields, "basics.phone", "手机号", "phone", profile.basics.phone);
-  addBasic(fields, "basics.email", "邮箱", "email", profile.basics.email);
-  addBasic(fields, "basics.location", "所在地", "location", profile.basics.location);
-  addBasic(fields, "basics.website", "个人网站", "website", profile.basics.website);
-  addBasic(fields, "basics.github", "GitHub", "github", profile.basics.github);
-  addBasic(fields, "basics.linkedin", "LinkedIn", "linkedin", profile.basics.linkedin);
-  addBasic(fields, "basics.summary", "个人简介", "summary", profile.basics.summary);
+  addTopField(fields, "personalInfo.email", "邮箱", "email", profile.personalInfo.email);
+  addTopField(fields, "personalInfo.phone", "手机号", "phone", profile.personalInfo.phone);
+  addTopField(
+    fields,
+    "personalInfo.workYears",
+    "工作年限",
+    "workYears",
+    profile.personalInfo.workYears
+  );
+
+  addTopField(
+    fields,
+    "jobIntention.currentIndustry",
+    "现从事行业",
+    "currentIndustry",
+    profile.jobIntention.currentIndustry
+  );
+  addTopField(
+    fields,
+    "jobIntention.currentOccupation",
+    "现从事职业",
+    "currentOccupation",
+    profile.jobIntention.currentOccupation
+  );
+  addTopField(
+    fields,
+    "jobIntention.currentCity",
+    "现工作城市",
+    "currentCity",
+    profile.jobIntention.currentCity
+  );
+  addTopField(
+    fields,
+    "jobIntention.currentMonthlySalary",
+    "现月薪(税前)",
+    "currentMonthlySalary",
+    profile.jobIntention.currentMonthlySalary
+  );
+  addTopField(
+    fields,
+    "jobIntention.expectedIndustry",
+    "期望从事行业",
+    "expectedIndustry",
+    profile.jobIntention.expectedIndustry
+  );
+  addTopField(
+    fields,
+    "jobIntention.expectedOccupation",
+    "期望从事职业",
+    "expectedOccupation",
+    profile.jobIntention.expectedOccupation
+  );
+  addTopField(
+    fields,
+    "jobIntention.expectedCity",
+    "期望工作城市",
+    "expectedCity",
+    profile.jobIntention.expectedCity
+  );
+  addTopField(
+    fields,
+    "jobIntention.expectedMonthlySalary",
+    "期望月薪(税前)",
+    "expectedMonthlySalary",
+    profile.jobIntention.expectedMonthlySalary
+  );
+  addTopField(
+    fields,
+    "jobIntention.availability",
+    "到岗时间",
+    "availability",
+    profile.jobIntention.availability
+  );
 
   profile.education.items.forEach((item, index) => {
-    addSectionField(fields, "education", index, "school", "学校", item.school);
-    addSectionField(fields, "education", index, "degree", "学历/学位", item.degree);
-    addSectionField(fields, "education", index, "major", "专业", item.major);
-    addSectionField(fields, "education", index, "startDate", "教育开始时间", item.startDate);
-    addSectionField(fields, "education", index, "endDate", "教育结束时间", item.endDate);
-    addSectionField(fields, "education", index, "gpa", "GPA", item.gpa);
-    addSectionField(fields, "education", index, "description", "教育描述", item.description);
+    addSectionField(fields, "education", index, "schoolName", "学校名称", item.schoolName);
+    addSectionField(fields, "education", index, "startDate", "开始时间", item.startDate);
+    addSectionField(fields, "education", index, "endDate", "结束时间", item.endDate);
+    addSectionField(fields, "education", index, "majorName", "专业名称", item.majorName);
+    addSectionField(fields, "education", index, "educationLevel", "学历", item.educationLevel);
+    addSectionField(fields, "education", index, "degree", "学位", item.degree);
   });
 
   profile.work.items.forEach((item, index) => {
-    addExperienceFields(fields, "work", index, item, "工作");
-  });
-
-  profile.internships.items.forEach((item, index) => {
-    addExperienceFields(fields, "internships", index, item, "实习");
-  });
-
-  profile.projects.items.forEach((item, index) => {
-    addSectionField(fields, "projects", index, "name", "项目名称", item.name);
-    addSectionField(fields, "projects", index, "role", "项目角色", item.role);
-    addSectionField(fields, "projects", index, "technologies", "项目技术", item.technologies);
-    addSectionField(fields, "projects", index, "startDate", "项目开始时间", item.startDate);
-    addSectionField(fields, "projects", index, "endDate", "项目结束时间", item.endDate);
-    addSectionField(fields, "projects", index, "link", "项目链接", item.link);
-    addSectionField(fields, "projects", index, "description", "项目描述", item.description);
-  });
-
-  profile.skills.items.forEach((item, index) => {
-    addSectionField(fields, "skills", index, "category", "技能分类", item.category);
-    addSectionField(fields, "skills", index, "values", "技能", item.values);
-  });
-
-  profile.certificates.items.forEach((item, index) => {
-    addSectionField(fields, "certificates", index, "name", "证书名称", item.name);
-    addSectionField(fields, "certificates", index, "issuer", "颁发机构", item.issuer);
-    addSectionField(fields, "certificates", index, "date", "获证时间", item.date);
-    addSectionField(fields, "certificates", index, "credentialId", "证书编号", item.credentialId);
-    addSectionField(fields, "certificates", index, "url", "证书链接", item.url);
+    addSectionField(fields, "work", index, "unitName", "单位名称", item.unitName);
+    addSectionField(fields, "work", index, "positionName", "职位名称", item.positionName);
+    addSectionField(fields, "work", index, "startDate", "开始时间", item.startDate);
+    addSectionField(fields, "work", index, "endDate", "结束时间", item.endDate);
+    addSectionField(fields, "work", index, "responsibilities", "工作职责", item.responsibilities);
   });
 
   profile.languages.items.forEach((item, index) => {
-    addSectionField(fields, "languages", index, "language", "语言", item.language);
-    addSectionField(fields, "languages", index, "proficiency", "熟练程度", item.proficiency);
-  });
-
-  profile.links.items.forEach((item, index) => {
-    addSectionField(fields, "links", index, "label", "链接名称", item.label);
-    addSectionField(fields, "links", index, "url", "链接地址", item.url);
+    addSectionField(fields, "languages", index, "languageType", "语言类型", item.languageType);
+    addSectionField(fields, "languages", index, "mastery", "掌握程度", item.mastery);
+    addSectionField(fields, "languages", index, "listeningSpeaking", "听说", item.listeningSpeaking);
+    addSectionField(fields, "languages", index, "readingWriting", "读写", item.readingWriting);
   });
 
   return fields;
 }
 
-function addBasic(
+function addTopField(
   fields: ResumeFlatField[],
   path: string,
   label: string,
@@ -276,18 +332,11 @@ function addSectionField(
   });
 }
 
-function addExperienceFields(
-  fields: ResumeFlatField[],
-  section: "work" | "internships",
-  itemIndex: number,
-  item: ExperienceItem,
-  prefix: string
-): void {
-  addSectionField(fields, section, itemIndex, "company", `${prefix}公司`, item.company);
-  addSectionField(fields, section, itemIndex, "title", `${prefix}职位`, item.title);
-  addSectionField(fields, section, itemIndex, "location", `${prefix}地点`, item.location);
-  addSectionField(fields, section, itemIndex, "startDate", `${prefix}开始时间`, item.startDate);
-  addSectionField(fields, section, itemIndex, "endDate", `${prefix}结束时间`, item.endDate);
-  addSectionField(fields, section, itemIndex, "description", `${prefix}描述`, item.description);
+function readRecord(value: unknown): LegacyRecord {
+  return value && typeof value === "object" ? (value as LegacyRecord) : {};
 }
 
+function readString(...values: unknown[]): string {
+  const value = values.find((item) => typeof item === "string" && item.length > 0);
+  return typeof value === "string" ? value : "";
+}

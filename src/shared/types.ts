@@ -1,12 +1,4 @@
-export type ResumeSectionName =
-  | "education"
-  | "work"
-  | "internships"
-  | "projects"
-  | "skills"
-  | "certificates"
-  | "languages"
-  | "links";
+export type ResumeSectionName = "education" | "work" | "languages";
 
 export interface ResumeSection<T> {
   id: string;
@@ -14,88 +6,62 @@ export interface ResumeSection<T> {
   items: T[];
 }
 
-export interface BasicInfo {
+export interface PersonalInfo {
   fullName: string;
-  preferredName: string;
-  phone: string;
+  gender: string;
+  birthDate: string;
   email: string;
-  location: string;
-  website: string;
-  github: string;
-  linkedin: string;
-  summary: string;
+  phone: string;
+  workYears: string;
+  photoNote: string;
+}
+
+export interface JobIntention {
+  currentIndustry: string;
+  currentOccupation: string;
+  currentCity: string;
+  currentMonthlySalary: string;
+  expectedIndustry: string;
+  expectedOccupation: string;
+  expectedCity: string;
+  expectedMonthlySalary: string;
+  availability: string;
 }
 
 export interface EducationItem {
   id: string;
-  school: string;
+  schoolName: string;
+  startDate: string;
+  endDate: string;
+  majorName: string;
+  educationLevel: string;
   degree: string;
-  major: string;
+}
+
+export interface WorkExperienceItem {
+  id: string;
+  unitName: string;
+  positionName: string;
   startDate: string;
   endDate: string;
-  gpa: string;
-  description: string;
+  responsibilities: string;
 }
 
-export interface ExperienceItem {
+export interface LanguageAbilityItem {
   id: string;
-  company: string;
-  title: string;
-  location: string;
-  startDate: string;
-  endDate: string;
-  description: string;
-}
-
-export interface ProjectItem {
-  id: string;
-  name: string;
-  role: string;
-  technologies: string;
-  startDate: string;
-  endDate: string;
-  link: string;
-  description: string;
-}
-
-export interface SkillItem {
-  id: string;
-  category: string;
-  values: string;
-}
-
-export interface CertificateItem {
-  id: string;
-  name: string;
-  issuer: string;
-  date: string;
-  credentialId: string;
-  url: string;
-}
-
-export interface LanguageItem {
-  id: string;
-  language: string;
-  proficiency: string;
-}
-
-export interface LinkItem {
-  id: string;
-  label: string;
-  url: string;
+  languageType: string;
+  mastery: string;
+  listeningSpeaking: string;
+  readingWriting: string;
 }
 
 export interface ResumeProfile {
-  version: 1;
-  basics: BasicInfo;
+  version: 2;
+  personalInfo: PersonalInfo;
+  jobIntention: JobIntention;
   education: ResumeSection<EducationItem>;
-  work: ResumeSection<ExperienceItem>;
-  internships: ResumeSection<ExperienceItem>;
-  projects: ResumeSection<ProjectItem>;
-  skills: ResumeSection<SkillItem>;
-  certificates: ResumeSection<CertificateItem>;
-  languages: ResumeSection<LanguageItem>;
-  links: ResumeSection<LinkItem>;
+  work: ResumeSection<WorkExperienceItem>;
+  languages: ResumeSection<LanguageAbilityItem>;
   updatedAt: string;
 }
 
@@ -183,6 +149,13 @@ export interface FillPlan {
   createdAt: string;
   mappings: FieldMapping[];
   sectionAdds: SectionAddPlan[];
+  ai?: {
+    enabled: boolean;
+    attempted: boolean;
+    applied: number;
+    endpoint?: string;
+    error?: string;
+  };
   stats: {
     confirmed: number;
     needsReview: number;
@@ -204,3 +177,49 @@ export interface ExecuteFillOptions {
   skipPaths: string[];
 }
 
+export interface AiMatchingSettings {
+  enabled: boolean;
+  endpoint: string;
+}
+
+export interface AiResumeFieldPayload {
+  path: string;
+  label: string;
+  fieldKey: string;
+  section?: ResumeSectionName;
+  itemIndex?: number;
+  currentStatus: MappingStatus;
+  semanticHints: string[];
+}
+
+export interface AiPageFieldPayload {
+  id: string;
+  labelText: string;
+  placeholder: string;
+  kind: FieldKind;
+  inputType: string;
+  name: string;
+  idAttr: string;
+  ariaLabel: string;
+  contextText: string;
+  options: string[];
+  sectionHint?: ResumeSectionName;
+  semanticHints: string[];
+}
+
+export interface AiMatchingRequestPayload {
+  origin: string;
+  resumeFields: AiResumeFieldPayload[];
+  pageFields: AiPageFieldPayload[];
+}
+
+export interface AiFieldSuggestion {
+  resumePath: string;
+  candidateId: string;
+  confidence: number;
+  reason: string;
+}
+
+export interface AiMatchingResponsePayload {
+  mappings: AiFieldSuggestion[];
+}

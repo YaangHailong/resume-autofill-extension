@@ -1,12 +1,14 @@
 import { createDefaultResumeProfile, normalizeResumeProfile } from "./resume";
-import { ResumeProfile, UserMappingOverride } from "./types";
+import { AiMatchingSettings, ResumeProfile, UserMappingOverride } from "./types";
 
 const STORAGE_KEYS = {
+  aiSettings: "aiMatchingSettings",
   profile: "resumeProfile",
   overrides: "userMappingOverrides"
 };
 
 const OVERRIDE_LIMIT = 200;
+export const DEFAULT_AI_MATCHING_ENDPOINT = "http://127.0.0.1:8787/api/resume-field-match";
 
 export async function getResumeProfile(): Promise<ResumeProfile> {
   const stored = await readStorage<{ resumeProfile?: Partial<ResumeProfile> }>([
@@ -59,6 +61,31 @@ export async function upsertMappingOverrides(
   await saveMappingOverrides(merged);
 }
 
+export async function getAiMatchingSettings(): Promise<AiMatchingSettings> {
+  const stored = await readStorage<{ aiMatchingSettings?: Partial<AiMatchingSettings> }>([
+    STORAGE_KEYS.aiSettings
+  ]);
+  return normalizeAiMatchingSettings(stored.aiMatchingSettings);
+}
+
+export async function saveAiMatchingSettings(settings: AiMatchingSettings): Promise<void> {
+  await writeStorage({
+    [STORAGE_KEYS.aiSettings]: normalizeAiMatchingSettings(settings)
+  });
+}
+
+function normalizeAiMatchingSettings(
+  settings: Partial<AiMatchingSettings> | undefined
+): AiMatchingSettings {
+  return {
+    enabled: Boolean(settings?.enabled),
+    endpoint:
+      typeof settings?.endpoint === "string" && settings.endpoint.trim().length > 0
+        ? settings.endpoint.trim()
+        : DEFAULT_AI_MATCHING_ENDPOINT
+  };
+}
+
 function chromeStorageAvailable(): boolean {
   return typeof chrome !== "undefined" && Boolean(chrome.storage?.local);
 }
@@ -90,4 +117,3 @@ async function writeStorage(items: Record<string, unknown>): Promise<void> {
     chrome.storage.local.set(items, () => resolve());
   });
 }
-

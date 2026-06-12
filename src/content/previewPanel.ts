@@ -1,5 +1,11 @@
+import { enhanceFillPlanWithAi } from "../shared/aiMatching";
 import { createFillPlan } from "../shared/matcher";
-import { getMappingOverrides, getResumeProfile, upsertMappingOverrides } from "../shared/storage";
+import {
+  getAiMatchingSettings,
+  getMappingOverrides,
+  getResumeProfile,
+  upsertMappingOverrides
+} from "../shared/storage";
 import {
   ExecuteFillOptions,
   FieldCandidate,
@@ -15,8 +21,10 @@ const HOST_ID = "resume-autofill-preview-host";
 export async function openPreviewPanel(): Promise<void> {
   const profile = await getResumeProfile();
   const overrides = await getMappingOverrides();
+  const aiSettings = await getAiMatchingSettings();
   const candidates = scanPageFields();
-  const plan = createFillPlan(profile, candidates, scanAddButtons(), location.origin, overrides);
+  const localPlan = createFillPlan(profile, candidates, scanAddButtons(), location.origin, overrides);
+  const plan = await enhanceFillPlanWithAi(localPlan, candidates, aiSettings);
   renderPanel(plan, candidates, false);
 }
 
@@ -63,6 +71,19 @@ function renderPanel(plan: FillPlan, candidates: FieldCandidate[], completed: bo
     notice.className = "notice";
     notice.textContent = "填写已完成。插件不会自动提交表单，请你检查后手动保存或提交。";
     panel.appendChild(notice);
+  }
+
+  if (plan.ai?.enabled) {
+    const aiNotice = document.createElement("div");
+    aiNotice.className = plan.ai.error ? "notice warning" : "notice";
+    if (plan.ai.error) {
+      aiNotice.textContent = `AI 增强匹配未应用：${plan.ai.error}`;
+    } else if (plan.ai.attempted) {
+      aiNotice.textContent = `AI 增强匹配已应用 ${plan.ai.applied} 条建议，请确认后再填写。`;
+    } else {
+      aiNotice.textContent = "AI 增强匹配已启用，但当前没有需要 AI 兜底的字段。";
+    }
+    panel.appendChild(aiNotice);
   }
 
   if (plan.sectionAdds.length > 0) {
@@ -334,6 +355,12 @@ function createStyles(): HTMLStyleElement {
       line-height: 1.45;
     }
 
+    .notice.warning {
+      background: #fff8e8;
+      border-color: #f0d8a7;
+      color: #694700;
+    }
+
     .sectionAdds {
       background: #fff8e8;
       border-color: #f0d8a7;
@@ -454,4 +481,3 @@ function escapeHtml(value: string): string {
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
 }
-

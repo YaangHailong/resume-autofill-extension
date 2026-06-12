@@ -1,56 +1,61 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  createCertificateItem,
   createDefaultResumeProfile,
   createEducationItem,
-  createExperienceItem,
-  createLanguageItem,
-  createLinkItem,
-  createProjectItem,
-  createSkillItem,
+  createLanguageAbilityItem,
+  createWorkExperienceItem,
   flattenResumeProfile,
   normalizeResumeProfile
 } from "../shared/resume";
-import { getResumeProfile, saveResumeProfile } from "../shared/storage";
 import {
-  CertificateItem,
+  DEFAULT_AI_MATCHING_ENDPOINT,
+  getAiMatchingSettings,
+  getResumeProfile,
+  saveAiMatchingSettings,
+  saveResumeProfile
+} from "../shared/storage";
+import {
+  AiMatchingSettings,
   EducationItem,
-  ExperienceItem,
-  LanguageItem,
-  LinkItem,
-  ProjectItem,
+  JobIntention,
+  LanguageAbilityItem,
+  PersonalInfo,
   ResumeProfile,
   ResumeSectionName,
-  SkillItem
+  WorkExperienceItem
 } from "../shared/types";
 
 type SectionItemMap = {
   education: EducationItem;
-  work: ExperienceItem;
-  internships: ExperienceItem;
-  projects: ProjectItem;
-  skills: SkillItem;
-  certificates: CertificateItem;
-  languages: LanguageItem;
-  links: LinkItem;
+  work: WorkExperienceItem;
+  languages: LanguageAbilityItem;
 };
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
 export default function App(): JSX.Element {
   const [profile, setProfile] = useState<ResumeProfile>(() => createDefaultResumeProfile());
+  const [aiSettings, setAiSettings] = useState<AiMatchingSettings>({
+    enabled: false,
+    endpoint: DEFAULT_AI_MATCHING_ENDPOINT
+  });
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [jsonDraft, setJsonDraft] = useState("");
   const filledFields = useMemo(() => flattenResumeProfile(profile).length, [profile]);
 
   useEffect(() => {
-    void getResumeProfile().then(setProfile);
+    void Promise.all([getResumeProfile(), getAiMatchingSettings()]).then(
+      ([storedProfile, storedAiSettings]) => {
+        setProfile(storedProfile);
+        setAiSettings(storedAiSettings);
+      }
+    );
   }, []);
 
   async function handleSave(): Promise<void> {
     setSaveState("saving");
     try {
-      await saveResumeProfile(profile);
+      await Promise.all([saveResumeProfile(profile), saveAiMatchingSettings(aiSettings)]);
       setSaveState("saved");
       window.setTimeout(() => setSaveState("idle"), 1600);
     } catch {
@@ -58,13 +63,30 @@ export default function App(): JSX.Element {
     }
   }
 
-  function updateBasic(field: keyof ResumeProfile["basics"], value: string): void {
+  function updatePersonalInfo(field: keyof PersonalInfo, value: string): void {
     setProfile((current) => ({
       ...current,
-      basics: {
-        ...current.basics,
+      personalInfo: {
+        ...current.personalInfo,
         [field]: value
       }
+    }));
+  }
+
+  function updateJobIntention(field: keyof JobIntention, value: string): void {
+    setProfile((current) => ({
+      ...current,
+      jobIntention: {
+        ...current.jobIntention,
+        [field]: value
+      }
+    }));
+  }
+
+  function updateAiSettings(patch: Partial<AiMatchingSettings>): void {
+    setAiSettings((current) => ({
+      ...current,
+      ...patch
     }));
   }
 
@@ -133,7 +155,7 @@ export default function App(): JSX.Element {
     <main className="appShell">
       <header className="topBar">
         <div>
-          <p className="eyebrow">Chrome MV3 本地模板</p>
+          <p className="eyebrow">新东方招聘表单模板</p>
           <h1>简历模板</h1>
         </div>
         <div className="topActions">
@@ -152,24 +174,58 @@ export default function App(): JSX.Element {
 
       <section className="sectionBand">
         <div className="sectionHeading">
-          <h2>基本信息</h2>
+          <h2>AI 增强匹配（可选）</h2>
         </div>
+        <label className="switchField">
+          <input
+            type="checkbox"
+            checked={aiSettings.enabled}
+            onChange={(event) => updateAiSettings({ enabled: event.target.checked })}
+          />
+          <span>启用 AI 兜底匹配，只处理未匹配和需确认字段。</span>
+        </label>
         <div className="fieldGrid">
-          <TextField label="姓名" value={profile.basics.fullName} onChange={(value) => updateBasic("fullName", value)} />
-          <TextField label="常用名" value={profile.basics.preferredName} onChange={(value) => updateBasic("preferredName", value)} />
-          <TextField label="手机号" value={profile.basics.phone} onChange={(value) => updateBasic("phone", value)} />
-          <TextField label="邮箱" type="email" value={profile.basics.email} onChange={(value) => updateBasic("email", value)} />
-          <TextField label="所在地" value={profile.basics.location} onChange={(value) => updateBasic("location", value)} />
-          <TextField label="个人网站" value={profile.basics.website} onChange={(value) => updateBasic("website", value)} />
-          <TextField label="GitHub" value={profile.basics.github} onChange={(value) => updateBasic("github", value)} />
-          <TextField label="LinkedIn" value={profile.basics.linkedin} onChange={(value) => updateBasic("linkedin", value)} />
           <TextField
-            label="个人简介"
-            value={profile.basics.summary}
-            onChange={(value) => updateBasic("summary", value)}
-            multiline
+            label="后端接口地址"
+            value={aiSettings.endpoint}
+            onChange={(value) => updateAiSettings({ endpoint: value })}
             wide
           />
+        </div>
+        <p className="helpText">
+          这里不要填写火山方舟 API Key。扩展只请求你的后端接口，后端再读取 ARK_API_KEY 调用火山方舟。
+        </p>
+      </section>
+
+      <section className="sectionBand">
+        <div className="sectionHeading">
+          <h2>个人信息</h2>
+        </div>
+        <div className="fieldGrid">
+          <TextField label="姓名" value={profile.personalInfo.fullName} onChange={(value) => updatePersonalInfo("fullName", value)} />
+          <TextField label="性别" value={profile.personalInfo.gender} onChange={(value) => updatePersonalInfo("gender", value)} />
+          <TextField label="出生日期" value={profile.personalInfo.birthDate} onChange={(value) => updatePersonalInfo("birthDate", value)} />
+          <TextField label="邮箱" type="email" value={profile.personalInfo.email} onChange={(value) => updatePersonalInfo("email", value)} />
+          <TextField label="手机号" value={profile.personalInfo.phone} onChange={(value) => updatePersonalInfo("phone", value)} />
+          <TextField label="工作年限" value={profile.personalInfo.workYears} onChange={(value) => updatePersonalInfo("workYears", value)} />
+          <TextField label="证件照备注" value={profile.personalInfo.photoNote} onChange={(value) => updatePersonalInfo("photoNote", value)} wide />
+        </div>
+      </section>
+
+      <section className="sectionBand">
+        <div className="sectionHeading">
+          <h2>求职意向</h2>
+        </div>
+        <div className="fieldGrid">
+          <TextField label="现从事行业" value={profile.jobIntention.currentIndustry} onChange={(value) => updateJobIntention("currentIndustry", value)} />
+          <TextField label="现从事职业" value={profile.jobIntention.currentOccupation} onChange={(value) => updateJobIntention("currentOccupation", value)} />
+          <TextField label="现工作城市" value={profile.jobIntention.currentCity} onChange={(value) => updateJobIntention("currentCity", value)} />
+          <TextField label="现月薪(税前)" value={profile.jobIntention.currentMonthlySalary} onChange={(value) => updateJobIntention("currentMonthlySalary", value)} />
+          <TextField label="期望从事行业" value={profile.jobIntention.expectedIndustry} onChange={(value) => updateJobIntention("expectedIndustry", value)} />
+          <TextField label="期望从事职业" value={profile.jobIntention.expectedOccupation} onChange={(value) => updateJobIntention("expectedOccupation", value)} />
+          <TextField label="期望工作城市" value={profile.jobIntention.expectedCity} onChange={(value) => updateJobIntention("expectedCity", value)} />
+          <TextField label="期望月薪(税前)" value={profile.jobIntention.expectedMonthlySalary} onChange={(value) => updateJobIntention("expectedMonthlySalary", value)} />
+          <TextField label="到岗时间" value={profile.jobIntention.availability} onChange={(value) => updateJobIntention("availability", value)} />
         </div>
       </section>
 
@@ -180,102 +236,43 @@ export default function App(): JSX.Element {
         onRemove={(id) => removeSectionItem("education", id)}
         render={(item) => (
           <div className="fieldGrid">
-            <TextField label="学校" value={item.school} onChange={(value) => updateSectionItem("education", item.id, { school: value })} />
-            <TextField label="学历/学位" value={item.degree} onChange={(value) => updateSectionItem("education", item.id, { degree: value })} />
-            <TextField label="专业" value={item.major} onChange={(value) => updateSectionItem("education", item.id, { major: value })} />
+            <TextField label="学校名称" value={item.schoolName} onChange={(value) => updateSectionItem("education", item.id, { schoolName: value })} />
             <TextField label="开始时间" value={item.startDate} onChange={(value) => updateSectionItem("education", item.id, { startDate: value })} />
             <TextField label="结束时间" value={item.endDate} onChange={(value) => updateSectionItem("education", item.id, { endDate: value })} />
-            <TextField label="GPA" value={item.gpa} onChange={(value) => updateSectionItem("education", item.id, { gpa: value })} />
-            <TextField label="教育描述" value={item.description} onChange={(value) => updateSectionItem("education", item.id, { description: value })} multiline wide />
+            <TextField label="专业名称" value={item.majorName} onChange={(value) => updateSectionItem("education", item.id, { majorName: value })} />
+            <TextField label="学历" value={item.educationLevel} onChange={(value) => updateSectionItem("education", item.id, { educationLevel: value })} />
+            <TextField label="学位" value={item.degree} onChange={(value) => updateSectionItem("education", item.id, { degree: value })} />
           </div>
         )}
       />
 
-      <ExperienceSection
+      <RepeatSection
         title="工作经历"
         items={profile.work.items}
-        onAdd={() => addSectionItem("work", () => createExperienceItem("work"))}
+        onAdd={() => addSectionItem("work", () => createWorkExperienceItem("work"))}
         onRemove={(id) => removeSectionItem("work", id)}
-        onUpdate={(id, patch) => updateSectionItem("work", id, patch)}
-      />
-
-      <ExperienceSection
-        title="实习经历"
-        items={profile.internships.items}
-        onAdd={() => addSectionItem("internships", () => createExperienceItem("intern"))}
-        onRemove={(id) => removeSectionItem("internships", id)}
-        onUpdate={(id, patch) => updateSectionItem("internships", id, patch)}
-      />
-
-      <RepeatSection
-        title="项目经历"
-        items={profile.projects.items}
-        onAdd={() => addSectionItem("projects", createProjectItem)}
-        onRemove={(id) => removeSectionItem("projects", id)}
         render={(item) => (
           <div className="fieldGrid">
-            <TextField label="项目名称" value={item.name} onChange={(value) => updateSectionItem("projects", item.id, { name: value })} />
-            <TextField label="项目角色" value={item.role} onChange={(value) => updateSectionItem("projects", item.id, { role: value })} />
-            <TextField label="技术栈" value={item.technologies} onChange={(value) => updateSectionItem("projects", item.id, { technologies: value })} />
-            <TextField label="开始时间" value={item.startDate} onChange={(value) => updateSectionItem("projects", item.id, { startDate: value })} />
-            <TextField label="结束时间" value={item.endDate} onChange={(value) => updateSectionItem("projects", item.id, { endDate: value })} />
-            <TextField label="项目链接" value={item.link} onChange={(value) => updateSectionItem("projects", item.id, { link: value })} />
-            <TextField label="项目描述" value={item.description} onChange={(value) => updateSectionItem("projects", item.id, { description: value })} multiline wide />
+            <TextField label="单位名称" value={item.unitName} onChange={(value) => updateSectionItem("work", item.id, { unitName: value })} />
+            <TextField label="职位名称" value={item.positionName} onChange={(value) => updateSectionItem("work", item.id, { positionName: value })} />
+            <TextField label="开始时间" value={item.startDate} onChange={(value) => updateSectionItem("work", item.id, { startDate: value })} />
+            <TextField label="结束时间" value={item.endDate} onChange={(value) => updateSectionItem("work", item.id, { endDate: value })} />
+            <TextField label="工作职责" value={item.responsibilities} onChange={(value) => updateSectionItem("work", item.id, { responsibilities: value })} multiline wide />
           </div>
         )}
       />
 
       <RepeatSection
-        title="技能"
-        items={profile.skills.items}
-        onAdd={() => addSectionItem("skills", createSkillItem)}
-        onRemove={(id) => removeSectionItem("skills", id)}
-        render={(item) => (
-          <div className="fieldGrid">
-            <TextField label="分类" value={item.category} onChange={(value) => updateSectionItem("skills", item.id, { category: value })} />
-            <TextField label="技能内容" value={item.values} onChange={(value) => updateSectionItem("skills", item.id, { values: value })} wide />
-          </div>
-        )}
-      />
-
-      <RepeatSection
-        title="证书"
-        items={profile.certificates.items}
-        onAdd={() => addSectionItem("certificates", createCertificateItem)}
-        onRemove={(id) => removeSectionItem("certificates", id)}
-        render={(item) => (
-          <div className="fieldGrid">
-            <TextField label="证书名称" value={item.name} onChange={(value) => updateSectionItem("certificates", item.id, { name: value })} />
-            <TextField label="颁发机构" value={item.issuer} onChange={(value) => updateSectionItem("certificates", item.id, { issuer: value })} />
-            <TextField label="获证时间" value={item.date} onChange={(value) => updateSectionItem("certificates", item.id, { date: value })} />
-            <TextField label="证书编号" value={item.credentialId} onChange={(value) => updateSectionItem("certificates", item.id, { credentialId: value })} />
-            <TextField label="证书链接" value={item.url} onChange={(value) => updateSectionItem("certificates", item.id, { url: value })} wide />
-          </div>
-        )}
-      />
-
-      <RepeatSection
-        title="语言"
+        title="语言能力"
         items={profile.languages.items}
-        onAdd={() => addSectionItem("languages", createLanguageItem)}
+        onAdd={() => addSectionItem("languages", createLanguageAbilityItem)}
         onRemove={(id) => removeSectionItem("languages", id)}
         render={(item) => (
           <div className="fieldGrid">
-            <TextField label="语言" value={item.language} onChange={(value) => updateSectionItem("languages", item.id, { language: value })} />
-            <TextField label="熟练程度" value={item.proficiency} onChange={(value) => updateSectionItem("languages", item.id, { proficiency: value })} />
-          </div>
-        )}
-      />
-
-      <RepeatSection
-        title="个人链接"
-        items={profile.links.items}
-        onAdd={() => addSectionItem("links", createLinkItem)}
-        onRemove={(id) => removeSectionItem("links", id)}
-        render={(item) => (
-          <div className="fieldGrid">
-            <TextField label="链接名称" value={item.label} onChange={(value) => updateSectionItem("links", item.id, { label: value })} />
-            <TextField label="链接地址" value={item.url} onChange={(value) => updateSectionItem("links", item.id, { url: value })} wide />
+            <TextField label="语言类型" value={item.languageType} onChange={(value) => updateSectionItem("languages", item.id, { languageType: value })} />
+            <TextField label="掌握程度" value={item.mastery} onChange={(value) => updateSectionItem("languages", item.id, { mastery: value })} />
+            <TextField label="听说" value={item.listeningSpeaking} onChange={(value) => updateSectionItem("languages", item.id, { listeningSpeaking: value })} />
+            <TextField label="读写" value={item.readingWriting} onChange={(value) => updateSectionItem("languages", item.id, { readingWriting: value })} />
           </div>
         )}
       />
@@ -367,40 +364,5 @@ function RepeatSection<T extends { id: string }>({
         ))}
       </div>
     </section>
-  );
-}
-
-interface ExperienceSectionProps {
-  title: string;
-  items: ExperienceItem[];
-  onAdd: () => void;
-  onRemove: (id: string) => void;
-  onUpdate: (id: string, patch: Partial<ExperienceItem>) => void;
-}
-
-function ExperienceSection({
-  title,
-  items,
-  onAdd,
-  onRemove,
-  onUpdate
-}: ExperienceSectionProps): JSX.Element {
-  return (
-    <RepeatSection
-      title={title}
-      items={items}
-      onAdd={onAdd}
-      onRemove={onRemove}
-      render={(item) => (
-        <div className="fieldGrid">
-          <TextField label="公司/单位" value={item.company} onChange={(value) => onUpdate(item.id, { company: value })} />
-          <TextField label="职位" value={item.title} onChange={(value) => onUpdate(item.id, { title: value })} />
-          <TextField label="地点" value={item.location} onChange={(value) => onUpdate(item.id, { location: value })} />
-          <TextField label="开始时间" value={item.startDate} onChange={(value) => onUpdate(item.id, { startDate: value })} />
-          <TextField label="结束时间" value={item.endDate} onChange={(value) => onUpdate(item.id, { endDate: value })} />
-          <TextField label="经历描述" value={item.description} onChange={(value) => onUpdate(item.id, { description: value })} multiline wide />
-        </div>
-      )}
-    />
   );
 }
