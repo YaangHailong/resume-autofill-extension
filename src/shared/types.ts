@@ -1,5 +1,6 @@
 export type ResumeSectionName = "education" | "work" | "languages";
 
+// 可重复模块的通用容器，例如教育经历、工作经历、语言能力。
 export interface ResumeSection<T> {
   id: string;
   title: string;
@@ -79,6 +80,7 @@ export type FieldKind =
   | "contenteditable"
   | "unknown";
 
+// 页面上扫描出来的可填写控件候选，matcher 只依赖这个结构做判断。
 export interface FieldCandidate {
   id: string;
   selector: string;
@@ -103,6 +105,7 @@ export interface AddButtonCandidate {
   contextText: string;
 }
 
+// 结构化简历在匹配前会被扁平化成一个个可填写字段。
 export interface ResumeFlatField {
   path: string;
   label: string;
@@ -114,6 +117,7 @@ export interface ResumeFlatField {
 
 export type MappingStatus = "confirmed" | "needs-review" | "unmatched";
 
+// 预览面板每一行的核心数据：模板字段、目标网页字段、置信度和原因。
 export interface FieldMapping {
   id: string;
   resumePath: string;
@@ -143,6 +147,7 @@ export interface SectionAddPlan {
   reason: string;
 }
 
+// 一次扫描生成的完整方案：字段映射、动态添加计划、AI 状态和统计信息。
 export interface FillPlan {
   id: string;
   origin: string;
@@ -177,11 +182,13 @@ export interface ExecuteFillOptions {
   skipPaths: string[];
 }
 
+// AI 设置只保存后端地址和开关，不保存火山方舟 API Key。
 export interface AiMatchingSettings {
   enabled: boolean;
   endpoint: string;
 }
 
+// AI payload 只包含字段结构和语义提示，不发送真实 targetValue。
 export interface AiResumeFieldPayload {
   path: string;
   label: string;

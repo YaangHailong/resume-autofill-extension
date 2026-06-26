@@ -1,5 +1,6 @@
 import { ExecuteFillOptions, FillPlan } from "./types";
 
+// 所有跨 popup/background/content 的消息类型集中在这里，避免字符串散落各处。
 export type RuntimeMessage =
   | { type: "OPEN_OPTIONS" }
   | { type: "RESUME_AUTOFILL_SCAN" }
@@ -11,4 +12,3 @@ export interface ScanResponse {
   ok: boolean;
   message?: string;
 }
-

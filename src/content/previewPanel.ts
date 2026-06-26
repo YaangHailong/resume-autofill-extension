@@ -19,6 +19,7 @@ import { executeFillWithDynamicAdds } from "./filler";
 const HOST_ID = "resume-autofill-preview-host";
 
 export async function openPreviewPanel(): Promise<void> {
+  // 预览面板每次打开都重新扫描当前 DOM，确保动态渲染后的字段能被识别。
   const profile = await getResumeProfile();
   const overrides = await getMappingOverrides();
   const aiSettings = await getAiMatchingSettings();
@@ -35,6 +36,7 @@ function renderPanel(plan: FillPlan, candidates: FieldCandidate[], completed: bo
   const host = document.createElement("div");
   host.id = HOST_ID;
   document.documentElement.appendChild(host);
+  // Shadow DOM 隔离样式，避免招聘网站自己的 CSS 影响预览面板。
   const root = host.attachShadow({ mode: "open" });
   root.appendChild(createStyles());
 
@@ -74,6 +76,7 @@ function renderPanel(plan: FillPlan, candidates: FieldCandidate[], completed: bo
   }
 
   if (plan.ai?.enabled) {
+    // AI 只影响预览方案；用户仍需要手动确认后才会执行填写。
     const aiNotice = document.createElement("div");
     aiNotice.className = plan.ai.error ? "notice warning" : "notice";
     if (plan.ai.error) {
@@ -129,6 +132,7 @@ function renderPanel(plan: FillPlan, candidates: FieldCandidate[], completed: bo
     confirmButton.disabled = true;
     confirmButton.textContent = "填写中...";
     const options = collectExecuteOptions(rows, candidates);
+    // 用户手动选择过的字段会保存成同域名 override，下次扫描优先使用。
     await saveSelectedOverrides(options.overrides);
     const profile = await getResumeProfile();
     const result = await executeFillWithDynamicAdds(
@@ -199,6 +203,7 @@ function collectExecuteOptions(
   rows.forEach(({ mapping, select }) => {
     const candidate = candidates.find((item) => item.id === select.value);
     if (!candidate) {
+      // “不填写”会进入 skipPaths，执行阶段不会尝试填这个字段。
       skipPaths.push(mapping.resumePath);
       return;
     }

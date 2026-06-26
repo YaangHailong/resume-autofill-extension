@@ -16,6 +16,7 @@ export function createId(prefix = "item"): string {
   return `${prefix}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
+// 默认空值集中在这里，options 页、测试和 normalize 都复用同一份结构。
 export const emptyPersonalInfo: PersonalInfo = {
   fullName: "",
   gender: "",
@@ -92,6 +93,7 @@ export function createDefaultResumeProfile(): ResumeProfile {
 }
 
 export function normalizeResumeProfile(input: Partial<ResumeProfile>): ResumeProfile {
+  // 兼容早期版本 basics 字段，避免用户升级扩展后原有姓名/邮箱/手机号丢失。
   const fallback = createDefaultResumeProfile();
   const legacy = input as LegacyRecord;
   const legacyBasics = readRecord(legacy.basics);
@@ -184,6 +186,7 @@ export function isProfileEffectivelyEmpty(profile: ResumeProfile): boolean {
 }
 
 export function flattenResumeProfile(profile: ResumeProfile): ResumeFlatField[] {
+  // matcher 只处理扁平字段，所以这里把结构化简历拆成 path + label + value。
   const fields: ResumeFlatField[] = [];
 
   addTopField(fields, "personalInfo.fullName", "姓名", "fullName", profile.personalInfo.fullName);
@@ -303,6 +306,7 @@ function addTopField(
   fieldKey: string,
   value: string
 ): void {
+  // 空字段不进入匹配计划，避免预览面板出现一堆没有意义的空行。
   const cleanValue = value.trim();
   if (!cleanValue) {
     return;
@@ -318,6 +322,7 @@ function addSectionField(
   label: string,
   value: string
 ): void {
+  // itemIndex 用来标记第几条教育/工作/语言，动态添加后还能对应回模板记录。
   const cleanValue = value.trim();
   if (!cleanValue) {
     return;
@@ -337,6 +342,7 @@ function readRecord(value: unknown): LegacyRecord {
 }
 
 function readString(...values: unknown[]): string {
+  // 从多个候选字段中读取第一个有效字符串，用于老 schema -> 新 schema 的迁移。
   const value = values.find((item) => typeof item === "string" && item.length > 0);
   return typeof value === "string" ? value : "";
 }

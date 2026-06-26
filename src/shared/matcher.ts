@@ -26,6 +26,7 @@ const CONFIRMED_THRESHOLD = 68;
 const REVIEW_THRESHOLD = 42;
 const MAX_DYNAMIC_ADDS_PER_SECTION = 5;
 
+// FillPlan 是一次扫描的完整结果：字段映射 + 动态添加计划 + 统计信息。
 export function createFillPlan(
   profile: ResumeProfile,
   candidates: FieldCandidate[],
@@ -66,6 +67,7 @@ export function createFieldMappings(
   const assignedMappings = new Map<number, FieldMapping>();
   const originOverrides = overrides.filter((override) => override.origin === origin);
 
+  // 用户在预览面板手动修正过的映射优先级最高。
   fields.forEach((field, index) => {
     const override = originOverrides.find((item) => item.resumePath === field.path);
     const overrideCandidate = override
@@ -82,6 +84,7 @@ export function createFieldMappings(
     }
   });
 
+  // 先计算所有候选组合，再按最高分分配，避免模板顺序导致低分字段抢占控件。
   const scored = fields
     .flatMap((field, fieldIndex) =>
       candidates
@@ -136,12 +139,19 @@ export function scoreFieldCandidate(
   let score = 0;
   const reasons: string[] = [];
 
+  const sectionConflict = scoreSectionConflict(field.section, candidate);
+  if (sectionConflict < 0) {
+    score += sectionConflict;
+    reasons.push("区块语境不一致");
+  }
+
   const sectionScore = scoreSection(field.section, candidate);
   if (sectionScore > 0) {
     score += sectionScore;
     reasons.push("区块语境匹配");
   }
 
+  // 字符串命中是最基础的信号：label > placeholder > name/id > 上下文。
   for (const keyword of keywords) {
     const normalizedKeyword = normalizeText(keyword);
     if (!normalizedKeyword) {
@@ -184,6 +194,7 @@ export function scoreFieldCandidate(
     }
   }
 
+  // 类型、取值形态、下拉选项、语义层分别补充加分或扣分。
   score += typeScore(field, candidate);
   score += valueShapeScore(field, candidate);
   score += optionScore(field, candidate);
@@ -211,6 +222,7 @@ export function createSectionAddPlans(
   return sections
     .map((section) => {
       const sectionItems = profile[section].items as unknown as Array<Record<string, unknown>>;
+      // id 是内部标识，不代表用户真的填写了这一条记录。
       const desiredCount = sectionItems.filter((item) =>
         Object.entries(item).some(
           ([key, value]) =>
@@ -228,6 +240,7 @@ export function createSectionAddPlans(
       }
 
       const existingCount = estimateExistingSectionCount(section, candidates);
+      // 设安全上限，避免按钮识别错误时无限点击。
       const addCount = Math.min(
         Math.max(0, desiredCount - existingCount),
         MAX_DYNAMIC_ADDS_PER_SECTION
@@ -316,6 +329,18 @@ function scoreSection(section: ResumeSectionName | undefined, candidate: FieldCa
     : 0;
 }
 
+function scoreSectionConflict(
+  section: ResumeSectionName | undefined,
+  candidate: FieldCandidate
+): number {
+  if (!section || !candidate.sectionHint || candidate.sectionHint === section) {
+    return 0;
+  }
+
+  // “开始时间/结束时间”这类字段在教育、实习、工作模块里同名，跨模块时必须强降分。
+  return -110;
+}
+
 function typeScore(field: ResumeFlatField, candidate: FieldCandidate): number {
   if (field.fieldKey === "email" && candidate.kind === "email") {
     return 28;
@@ -356,6 +381,7 @@ function semanticScore(
     return { score: 0, reasons: [] };
   }
 
+  // 学历和学位先归入教育资质大类，再用更细语义和选项内容区分。
   let score = 0;
   const reasons: string[] = [];
   const directMatches = intersectSemantics(fieldSemantics, candidateSemantics);
@@ -394,6 +420,7 @@ function educationCredentialConflictScore(
     optionSemantics.includes("academic_degree") &&
     !optionSemantics.includes("education_level")
   ) {
+    // 页面选项只有“学士/硕士/博士”时，更可能是学位，不应匹配学历字段。
     reasons.push("下拉选项更像学位而不是学历");
     return -60;
   }
@@ -403,6 +430,7 @@ function educationCredentialConflictScore(
     optionSemantics.includes("education_level") &&
     !optionSemantics.includes("academic_degree")
   ) {
+    // 页面选项是“本科/硕士研究生”时，更可能是学历，不应匹配学位字段。
     reasons.push("下拉选项更像学历而不是学位");
     return -60;
   }
@@ -414,6 +442,7 @@ function valueShapeScore(field: ResumeFlatField, candidate: FieldCandidate): num
   const targetValue = field.value.trim();
   const candidateText = `${candidate.value} ${candidate.placeholder} ${candidate.name} ${candidate.idAttr}`;
   if (field.fieldKey === "phone") {
+    // 手机号组合控件里常有“中国大陆”区号输入框，这里给真实手机号框加分、给区号框扣分。
     const targetDigits = targetValue.replace(/\D/g, "");
     const candidateDigits = candidate.value.replace(/\D/g, "");
     let score = 0;
@@ -473,6 +502,7 @@ function findAddButton(
 
   return addButtons
     .map((button) => {
+      // 按“按钮自身文本”优先判断，再用邻近上下文辅助识别模块归属。
       const ownText = normalizeText(button.text);
       const contextText = normalizeText(button.contextText);
       const strongHit = keywords.some((keyword) => ownText.includes(keyword));

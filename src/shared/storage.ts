@@ -10,6 +10,7 @@ const STORAGE_KEYS = {
 const OVERRIDE_LIMIT = 200;
 export const DEFAULT_AI_MATCHING_ENDPOINT = "http://127.0.0.1:8787/api/resume-field-match";
 
+// 所有用户简历数据都存在 chrome.storage.local，不经过后端。
 export async function getResumeProfile(): Promise<ResumeProfile> {
   const stored = await readStorage<{ resumeProfile?: Partial<ResumeProfile> }>([
     STORAGE_KEYS.profile
@@ -26,6 +27,7 @@ export async function saveResumeProfile(profile: ResumeProfile): Promise<void> {
   });
 }
 
+// overrides 是用户在预览面板手动修正过的“简历字段 -> 网页字段”记忆。
 export async function getMappingOverrides(): Promise<UserMappingOverride[]> {
   const stored = await readStorage<{ userMappingOverrides?: UserMappingOverride[] }>([
     STORAGE_KEYS.overrides
@@ -45,6 +47,7 @@ export async function saveMappingOverrides(overrides: UserMappingOverride[]): Pr
 export async function upsertMappingOverrides(
   nextOverrides: UserMappingOverride[]
 ): Promise<void> {
+  // 同一个网站同一个简历字段只保留最新选择，避免历史映射互相冲突。
   const existing = await getMappingOverrides();
   const merged = [...nextOverrides, ...existing].reduce<UserMappingOverride[]>((items, item) => {
     const duplicateIndex = items.findIndex(
@@ -91,6 +94,7 @@ function chromeStorageAvailable(): boolean {
 }
 
 async function readStorage<T>(keys: string[]): Promise<T> {
+  // 非扩展环境下使用 localStorage，方便 Vite 页面调试和单元测试。
   if (!chromeStorageAvailable()) {
     const result: Record<string, unknown> = {};
     keys.forEach((key) => {
@@ -106,6 +110,7 @@ async function readStorage<T>(keys: string[]): Promise<T> {
 }
 
 async function writeStorage(items: Record<string, unknown>): Promise<void> {
+  // chrome.storage.local 是真实扩展运行时的持久化入口。
   if (!chromeStorageAvailable()) {
     Object.entries(items).forEach(([key, value]) => {
       window.localStorage.setItem(key, JSON.stringify(value));

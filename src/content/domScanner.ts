@@ -1,6 +1,7 @@
 import { sectionForText } from "../shared/fieldDictionary";
 import { AddButtonCandidate, FieldCandidate, FieldKind } from "../shared/types";
 
+// 扫描所有第一版支持的可填写控件；排除提交、重置、隐藏和文件上传。
 const FIELD_SELECTOR = [
   "input:not([type='hidden']):not([type='submit']):not([type='button']):not([type='reset']):not([type='file'])",
   "textarea",
@@ -9,6 +10,7 @@ const FIELD_SELECTOR = [
   "[role='textbox']"
 ].join(",");
 
+// 动态添加按钮可能不是 button，新东方页面里就会出现 id 带 addButton 的 div。
 const ADD_BUTTON_SELECTOR = [
   "button",
   "a",
@@ -22,6 +24,7 @@ const ADD_BUTTON_SELECTOR = [
 const FIELD_ID_ATTR = "data-resume-autofill-field";
 const BUTTON_ID_ATTR = "data-resume-autofill-button";
 
+// 把真实 DOM 控件转成 FieldCandidate，后续 matcher 只依赖这份结构化信息。
 export function scanPageFields(root: ParentNode = document): FieldCandidate[] {
   const elements = Array.from(root.querySelectorAll<HTMLElement>(FIELD_SELECTOR)).filter(
     isVisibleElement
@@ -35,6 +38,7 @@ export function scanPageFields(root: ParentNode = document): FieldCandidate[] {
     const idAttr = getAttribute(element, "id");
     const ariaLabel = getAttribute(element, "aria-label");
     const contextText = collectContextText(element);
+    const sectionHint = inferNearestSectionHint(element, labelText, placeholder, contextText);
 
     return {
       id,
@@ -50,11 +54,12 @@ export function scanPageFields(root: ParentNode = document): FieldCandidate[] {
       contextText,
       value: readElementValue(element),
       options: readOptions(element),
-      sectionHint: sectionForText(`${labelText} ${placeholder} ${contextText}`)
+      sectionHint
     };
   });
 }
 
+// 扫描“添加教育/工作/语言”等按钮。这里故意收紧规则，避免把备案/隐私链接点掉。
 export function scanAddButtons(root: ParentNode = document): AddButtonCandidate[] {
   const elements = Array.from(root.querySelectorAll<HTMLElement>(ADD_BUTTON_SELECTOR)).filter(
     (element) => isVisibleElement(element) && !isDisabled(element)
@@ -88,10 +93,12 @@ export function scanAddButtons(root: ParentNode = document): AddButtonCandidate[
     .filter((item): item is AddButtonCandidate => Boolean(item));
 }
 
+// 填写阶段通过扫描时写入的 data 属性重新定位元素，避免复杂 CSS selector 不稳定。
 export function queryAutofillElement(selector: string): HTMLElement | null {
   return document.querySelector<HTMLElement>(selector);
 }
 
+// 优先使用语义明确的控件类型，matcher 会据此给 email、phone、date 等字段加分。
 function detectFieldKind(element: HTMLElement): FieldKind {
   if (element instanceof HTMLTextAreaElement) {
     return "textarea";
@@ -131,6 +138,7 @@ function detectFieldKind(element: HTMLElement): FieldKind {
 }
 
 function findLabelText(element: HTMLElement): string {
+  // 标准 label[for] 是最可靠的 label 来源。
   const id = element.getAttribute("id");
   if (id) {
     const label = document.querySelector<HTMLLabelElement>(`label[for="${cssEscape(id)}"]`);
@@ -163,6 +171,7 @@ function findLabelText(element: HTMLElement): string {
   return findNearbyLabelText(element);
 }
 
+// 上下文文本用于兜底匹配，但限制深度和长度，避免页脚/导航污染匹配结果。
 function collectContextText(element: HTMLElement): string {
   const pieces: string[] = [];
   let current: HTMLElement | null = element.parentElement;
@@ -175,6 +184,130 @@ function collectContextText(element: HTMLElement): string {
   }
 
   return compactText(pieces.join(" ")).slice(0, 500);
+}
+
+function inferNearestSectionHint(
+  element: HTMLElement,
+  labelText: string,
+  placeholder: string,
+  contextText: string
+): FieldCandidate["sectionHint"] {
+  return (
+    findNearestSectionHint(element) ??
+    sectionForText(`${labelText} ${placeholder} ${contextText}`)
+  );
+}
+
+function findNearestSectionHint(element: HTMLElement): FieldCandidate["sectionHint"] {
+  let current: HTMLElement = element;
+  let parent = element.parentElement;
+  let depth = 0;
+
+  while (parent && depth < 10) {
+    const siblingHint = findPreviousSiblingSectionHint(current);
+    if (siblingHint) {
+      return siblingHint;
+    }
+
+    const parentHint = sectionForText(buildContainerSectionSignal(parent));
+    if (parentHint) {
+      return parentHint;
+    }
+
+    current = parent;
+    parent = parent.parentElement;
+    depth += 1;
+  }
+
+  return undefined;
+}
+
+function buildContainerSectionSignal(container: HTMLElement): string {
+  const parts = [
+    getAttribute(container, "aria-label"),
+    getAttribute(container, "title"),
+    getAttribute(container, "data-section"),
+    getAttribute(container, "data-name"),
+    container.id,
+    String(container.className || "")
+  ];
+
+  const legend = Array.from(container.children).find(
+    (child) => child.tagName.toLowerCase() === "legend"
+  ) as HTMLElement | undefined;
+  if (legend) {
+    parts.push(extractStaticText(legend));
+  }
+
+  const heading = Array.from(container.children).find((child) =>
+    /^h[1-6]$/i.test(child.tagName)
+  ) as HTMLElement | undefined;
+  if (heading) {
+    parts.push(extractStaticText(heading));
+  }
+
+  return compactText(parts.join(" "));
+}
+
+function findPreviousSiblingSectionHint(reference: HTMLElement): FieldCandidate["sectionHint"] {
+  let sibling = reference.previousElementSibling as HTMLElement | null;
+  let checked = 0;
+
+  while (sibling && checked < 16) {
+    const hint = findSectionHintInside(sibling);
+    if (hint) {
+      return hint;
+    }
+    sibling = sibling.previousElementSibling as HTMLElement | null;
+    checked += 1;
+  }
+
+  return undefined;
+}
+
+function findSectionHintInside(element: HTMLElement): FieldCandidate["sectionHint"] {
+  const selfHint = sectionForText(
+    compactText(
+      [
+        extractStaticText(element),
+        getAttribute(element, "aria-label"),
+        getAttribute(element, "title"),
+        getAttribute(element, "data-section"),
+        getAttribute(element, "data-name"),
+        element.id,
+        String(element.className || "")
+      ].join(" ")
+    )
+  );
+  if (selfHint) {
+    return selfHint;
+  }
+
+  const sectionTextElements = Array.from(
+    element.querySelectorAll<HTMLElement>(
+      [
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "h5",
+        "h6",
+        "legend",
+        "[class*='title']",
+        "[class*='header']",
+        "[class*='section']"
+      ].join(",")
+    )
+  ).reverse();
+
+  for (const candidate of sectionTextElements) {
+    const hint = sectionForText(extractStaticText(candidate));
+    if (hint) {
+      return hint;
+    }
+  }
+
+  return undefined;
 }
 
 function readElementValue(element: HTMLElement): string {
@@ -209,6 +342,7 @@ function getButtonText(element: HTMLElement): string {
 }
 
 function findFormItemLabelText(element: HTMLElement): string {
+  // 新东方等组件化表单常用 .form-item__text 存 label，而不是原生 label[for]。
   const formItem = element.closest(".form-item");
   const label = formItem?.querySelector<HTMLElement>(".form-item__text, label");
   return label ? cleanLabelText(label.textContent ?? "") : "";
@@ -239,6 +373,7 @@ function findNearbyLabelText(element: HTMLElement): string {
 }
 
 function extractStaticText(element: HTMLElement): string {
+  // 克隆后移除控件和按钮，只保留静态说明文字作为候选 label。
   const clone = element.cloneNode(true) as HTMLElement;
   clone.querySelectorAll(`${FIELD_SELECTOR}, ${ADD_BUTTON_SELECTOR}`).forEach((child) => {
     child.remove();
@@ -254,6 +389,7 @@ function extractStaticText(element: HTMLElement): string {
 }
 
 function ensureDataId(element: HTMLElement, attr: string, fallback: string): string {
+  // 给页面元素打临时标记，预览面板里的 selector 才能稳定回指到同一个控件。
   const existing = element.getAttribute(attr);
   if (existing) {
     return existing;

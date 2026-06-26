@@ -1,5 +1,6 @@
 import { ResumeSectionName } from "./types";
 
+// FieldSemantic 是本地轻量语义层，用来弥补“字面不一样但含义接近”的字段。
 export type FieldSemantic =
   | "person_name"
   | "gender"
@@ -65,6 +66,7 @@ export const FIELD_KEYWORDS: Record<string, string[]> = {
   readingWriting: ["读写", "阅读写作", "读写能力", "reading writing"]
 };
 
+// 每个模板字段对应的语义类型，matcher 会用它和页面字段语义做交叉判断。
 export const FIELD_SEMANTICS: Record<string, FieldSemantic[]> = {
   fullName: ["person_name"],
   gender: ["gender"],
@@ -95,6 +97,7 @@ export const FIELD_SEMANTICS: Record<string, FieldSemantic[]> = {
   readingWriting: ["language_proficiency"]
 };
 
+// 从页面 label / placeholder / name / id 中推断语义。
 export const SEMANTIC_KEYWORDS: Record<FieldSemantic, string[]> = {
   person_name: ["姓名", "名字", "真实姓名", "name", "full name"],
   gender: ["性别", "gender", "sex"],
@@ -117,6 +120,7 @@ export const SEMANTIC_KEYWORDS: Record<FieldSemantic, string[]> = {
   language_proficiency: ["掌握", "熟练", "听说", "读写", "水平", "proficiency", "level"]
 };
 
+// 从下拉选项或当前值推断语义，特别用于区分“学历”和“学位”。
 export const SEMANTIC_VALUE_KEYWORDS: Record<FieldSemantic, string[]> = {
   person_name: [],
   gender: ["男", "女", "male", "female"],
@@ -164,13 +168,38 @@ export const SEMANTIC_VALUE_KEYWORDS: Record<FieldSemantic, string[]> = {
 
 export const SECTION_KEYWORDS: Record<ResumeSectionName, string[]> = {
   education: ["教育经历", "教育", "学历", "学校", "院校", "education", "school"],
-  work: ["工作经历", "工作", "职业经历", "employment", "work", "experience"],
+  work: [
+    "工作经历",
+    "工作",
+    "职业经历",
+    "实习经历",
+    "实习",
+    "单位",
+    "公司",
+    "职位",
+    "岗位",
+    "employment",
+    "work",
+    "experience",
+    "internship",
+    "intern"
+  ],
   languages: ["语言能力", "语言", "language"]
 };
 
 export const SECTION_ADD_KEYWORDS: Record<ResumeSectionName, string[]> = {
   education: ["添加教育经历", "添加教育", "新增教育", "添加学历", "add education", "add school"],
-  work: ["添加工作经历", "添加工作", "新增工作", "添加经历", "add work", "add experience"],
+  work: [
+    "添加工作经历",
+    "添加工作",
+    "新增工作",
+    "添加实习经历",
+    "新增实习经历",
+    "添加经历",
+    "add work",
+    "add experience",
+    "add internship"
+  ],
   languages: ["添加语言能力", "添加语言", "新增语言", "add language"]
 };
 
@@ -232,6 +261,7 @@ function valueMatchesSemantic(
   }
 
   if (semantic === "academic_degree") {
+    // “硕士研究生”是学历，不是学位；“硕士学位/硕士”才更像学位。
     if (/研究生|本科|专科|大专|高中|中专/.test(normalizedValue)) {
       return false;
     }
@@ -247,6 +277,7 @@ function valueMatchesSemantic(
 }
 
 export function normalizeText(text: unknown): string {
+  // DOM 和 AI 返回都可能有脏数据，统一转字符串后再做匹配归一化。
   if (text === null || text === undefined) {
     return "";
   }

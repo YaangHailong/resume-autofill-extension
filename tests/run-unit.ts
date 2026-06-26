@@ -19,6 +19,7 @@ type TestCase = {
   run: () => void | Promise<void>;
 };
 
+// 这些测试覆盖核心纯逻辑和 DOM fixture，避免后续改匹配/填写时破坏线上场景。
 const tests: TestCase[] = [
   {
     name: "默认简历 schema 按新东方表单结构生成",
@@ -282,6 +283,72 @@ const tests: TestCase[] = [
     }
   },
   {
+    name: "教育日期不会串填到实习经历日期字段",
+    run: async () => {
+      installDom(`
+        <form>
+          <h2>教育经历</h2>
+          <div class="form-item">
+            <label for="eduSchool">学校名称</label>
+            <input id="eduSchool" />
+          </div>
+          <div class="form-item">
+            <label for="eduStart">开始时间</label>
+            <input id="eduStart" />
+          </div>
+          <div class="form-item">
+            <label for="eduEnd">结束时间</label>
+            <input id="eduEnd" />
+          </div>
+
+          <h2>实习经历</h2>
+          <div class="form-item">
+            <label for="internCompany">实习单位</label>
+            <input id="internCompany" />
+          </div>
+          <div class="form-item">
+            <label for="internStart">开始时间</label>
+            <input id="internStart" />
+          </div>
+          <div class="form-item">
+            <label for="internEnd">结束时间</label>
+            <input id="internEnd" />
+          </div>
+        </form>
+      `);
+
+      const profile = createDefaultResumeProfile();
+      profile.education.items[0].schoolName = "西安理工大学";
+      profile.education.items[0].startDate = "2024-09";
+      profile.education.items[0].endDate = "2027-07";
+
+      const fields = scanPageFields();
+      const eduStart = fields.find((field) => field.idAttr === "eduStart");
+      const internStart = fields.find((field) => field.idAttr === "internStart");
+      assert.strictEqual(eduStart?.sectionHint, "education");
+      assert.strictEqual(internStart?.sectionHint, "work");
+
+      const plan = createFillPlan(profile, fields, scanAddButtons(), "https://example.com");
+      const byPath = new Map(plan.mappings.map((mapping) => [mapping.resumePath, mapping]));
+      const startTarget = document.querySelector(
+        byPath.get("education.items[0].startDate")?.selector ?? ""
+      ) as HTMLInputElement;
+      const endTarget = document.querySelector(
+        byPath.get("education.items[0].endDate")?.selector ?? ""
+      ) as HTMLInputElement;
+
+      assert.strictEqual(startTarget.id, "eduStart");
+      assert.strictEqual(endTarget.id, "eduEnd");
+
+      await fillPlan(plan);
+
+      assert.strictEqual((document.getElementById("eduStart") as HTMLInputElement).value, "2024-09");
+      assert.strictEqual((document.getElementById("eduEnd") as HTMLInputElement).value, "2027-07");
+      assert.strictEqual((document.getElementById("internStart") as HTMLInputElement).value, "");
+      assert.strictEqual((document.getElementById("internEnd") as HTMLInputElement).value, "");
+    }
+  },
+  {
     name: "语言多条数据会生成动态添加计划",
     run: () => {
       installDom(`
@@ -463,6 +530,143 @@ const tests: TestCase[] = [
     }
   },
   {
+    name: "裸年份年月选择器会切换年份并点击目标月份",
+    run: async () => {
+      installDom(`
+        <form>
+          <div class="form-item">
+            <div class="form-item__title"><label class="form-item__text">开始时间</label></div>
+            <div class="form-item__control">
+              <div class="phoenix-select phoenix-select--editable">
+                <input id="plainYearMonthInput" value="" />
+                <button type="button" class="phoenix-select__switchArrow">日历</button>
+              </div>
+            </div>
+          </div>
+          <div class="phoenix-month-picker">
+            <button type="button" id="plainPrevYear">«</button>
+            <strong id="plainYearLabel">2026</strong>
+            <button type="button" id="plainNextYear">»</button>
+            <div class="monthGrid">
+              <button type="button">1月</button>
+              <button type="button">2月</button>
+              <button type="button">3月</button>
+              <button type="button">4月</button>
+              <button type="button">5月</button>
+              <button type="button">6月</button>
+              <button type="button">7月</button>
+              <button type="button">8月</button>
+              <button type="button">9月</button>
+              <button type="button">10月</button>
+              <button type="button">11月</button>
+              <button type="button">12月</button>
+            </div>
+            <button type="button">本月</button>
+          </div>
+        </form>
+      `);
+
+      const input = document.getElementById("plainYearMonthInput") as HTMLInputElement;
+      const yearLabel = document.getElementById("plainYearLabel") as HTMLElement;
+      document.getElementById("plainPrevYear")?.addEventListener("click", () => {
+        const current = Number(yearLabel.textContent?.match(/\d{4}/)?.[0] ?? "2026");
+        yearLabel.textContent = `${current - 1}`;
+      });
+      document.getElementById("plainNextYear")?.addEventListener("click", () => {
+        const current = Number(yearLabel.textContent?.match(/\d{4}/)?.[0] ?? "2026");
+        yearLabel.textContent = `${current + 1}`;
+      });
+      document.querySelectorAll<HTMLButtonElement>(".monthGrid button").forEach((button) => {
+        button.addEventListener("click", () => {
+          const year = yearLabel.textContent?.match(/\d{4}/)?.[0] ?? "";
+          const month = button.textContent?.match(/\d+/)?.[0]?.padStart(2, "0") ?? "";
+          input.value = `${year}-${month}`;
+        });
+      });
+
+      const profile = createDefaultResumeProfile();
+      profile.education.items[0].startDate = "2024-06";
+
+      const plan = createFillPlan(profile, scanPageFields(), scanAddButtons(), "https://example.com");
+      const result = await fillPlan(plan);
+
+      assert.ok(result.filled >= 1);
+      assert.strictEqual(yearLabel.textContent, "2024");
+      assert.strictEqual(input.value, "2024-06");
+    }
+  },
+  {
+    name: "两步式年月选择器会先选年份再选月份",
+    run: async () => {
+      installDom(`
+        <form>
+          <div class="form-item">
+            <div class="form-item__title"><label class="form-item__text">开始时间</label></div>
+            <div class="form-item__control">
+              <div class="phoenix-select phoenix-select--editable">
+                <input id="twoStepMonthInput" value="" />
+                <span class="phoenix-select__switchArrow">日历</span>
+              </div>
+            </div>
+          </div>
+          <div id="yearPanel" class="phoenix-year-picker">
+            <button type="button">2023年</button>
+            <button type="button">2024年</button>
+            <button type="button">2025年</button>
+            <button type="button">2026年</button>
+          </div>
+          <div id="monthPanel" class="phoenix-month-picker" style="display: none">
+            <strong id="selectedYear"></strong>
+            <div class="monthGrid">
+              <button type="button">1月</button>
+              <button type="button">2月</button>
+              <button type="button">3月</button>
+              <button type="button">4月</button>
+              <button type="button">5月</button>
+              <button type="button">6月</button>
+              <button type="button">7月</button>
+              <button type="button">8月</button>
+              <button type="button">9月</button>
+              <button type="button">10月</button>
+              <button type="button">11月</button>
+              <button type="button">12月</button>
+            </div>
+          </div>
+        </form>
+      `);
+
+      const input = document.getElementById("twoStepMonthInput") as HTMLInputElement;
+      const yearPanel = document.getElementById("yearPanel") as HTMLElement;
+      const monthPanel = document.getElementById("monthPanel") as HTMLElement;
+      const selectedYear = document.getElementById("selectedYear") as HTMLElement;
+
+      yearPanel.querySelectorAll<HTMLButtonElement>("button").forEach((button) => {
+        button.addEventListener("click", () => {
+          selectedYear.textContent = button.textContent?.match(/\d{4}/)?.[0] ?? "";
+          yearPanel.style.display = "none";
+          monthPanel.style.display = "block";
+        });
+      });
+      monthPanel.querySelectorAll<HTMLButtonElement>(".monthGrid button").forEach((button) => {
+        button.addEventListener("click", () => {
+          const year = selectedYear.textContent ?? "";
+          const month = button.textContent?.match(/\d+/)?.[0]?.padStart(2, "0") ?? "";
+          input.value = `${year}-${month}`;
+        });
+      });
+
+      const profile = createDefaultResumeProfile();
+      profile.education.items[0].startDate = "2024-09";
+
+      const plan = createFillPlan(profile, scanPageFields(), scanAddButtons(), "https://example.com");
+      const result = await fillPlan(plan);
+
+      assert.ok(result.filled >= 1);
+      assert.strictEqual(selectedYear.textContent, "2024");
+      assert.strictEqual(input.value, "2024-09");
+    }
+  },
+  {
     name: "空模板不会产生可填写字段",
     run: () => {
       const profile = createDefaultResumeProfile();
@@ -569,6 +773,7 @@ async function runAll(): Promise<void> {
 }
 
 function installDom(markup: string): void {
+  // 每个用例都安装一个新的 jsdom 页面，模拟 content script 在真实网页里运行。
   const dom = new JSDOM(markup, {
     url: "https://example.com/jobs/apply",
     pretendToBeVisual: true
@@ -583,6 +788,7 @@ function installDom(markup: string): void {
 
   patchRects(dom);
 
+  // 把 jsdom 的 DOM 构造器挂到 globalThis，源码里的 instanceof 判断才会生效。
   (globalThis as unknown as { window: Window }).window = dom.window as unknown as Window;
   (globalThis as unknown as { document: Document }).document = dom.window.document;
   (globalThis as unknown as { HTMLElement: typeof HTMLElement }).HTMLElement =
@@ -606,6 +812,7 @@ function readFixture(path: string): string {
 }
 
 function createAiMergePlan(): FillPlan {
+  // 手工构造 FillPlan，专门测试 AI 建议合并逻辑，不依赖 DOM 扫描。
   return {
     id: "plan-ai",
     origin: "https://example.com",
@@ -684,6 +891,7 @@ function createAiMergeCandidates(): FieldCandidate[] {
 }
 
 function patchRects(dom: JSDOM): void {
+  // jsdom 没有真实布局，手动给元素尺寸，保证 isVisibleElement 判断为可见。
   dom.window.Element.prototype.getBoundingClientRect = function getBoundingClientRect() {
     return {
       x: 0,

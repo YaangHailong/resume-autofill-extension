@@ -27,6 +27,7 @@ const CUSTOM_CONTROL_SELECTOR = [
   ".form-item__control"
 ].join(",");
 
+// 常见组件库会把下拉项渲染到 body 末尾，填写时需要从全局弹层里找选项。
 const POPUP_OPTION_SELECTOR = [
   "[role='option']",
   ".phoenix-single-select-list__content-item",
@@ -48,6 +49,7 @@ export async function executeFillWithDynamicAdds(
   overrides: UserMappingOverride[],
   skipPaths: string[]
 ): Promise<{ plan: FillPlan; result: FillResult }> {
+  // 动态区块必须先添加，再重新扫描，否则新增出来的输入框不会在旧计划里。
   const initialPlan = createFillPlan(
     profile,
     scanPageFields(),
@@ -84,6 +86,7 @@ export async function applySectionAdds(sectionAdds: SectionAddPlan[]): Promise<n
       if (!element) {
         break;
       }
+      // 添加一次等页面稳定一次，避免连续点击时前端还没渲染完新增区块。
       element.click();
       total += 1;
       await waitForPageToSettle();
@@ -169,10 +172,10 @@ async function fillCustomControl(
     return false;
   }
 
-  openCustomControl(root, element);
-  await waitForPageToSettle(120);
+  // 自定义 select/date 控件必须先像用户一样点击打开弹层，再选择真实选项。
+  await openCustomControl(root, element, mapping.targetValue);
 
-  if (await selectYearMonthFromPopup(mapping.targetValue)) {
+  if (await selectYearMonthFromPopup(mapping.targetValue, element)) {
     dispatchValueEvents(element);
     return true;
   }
@@ -185,6 +188,7 @@ async function fillCustomControl(
     return true;
   }
 
+  // 对可输入的时间/下拉框做兜底：写值、按 Enter、失焦，尽量触发组件内部状态更新。
   setInputValue(element, mapping.targetValue);
   dispatchKeyboardEvent(element, "keydown", "Enter");
   dispatchKeyboardEvent(element, "keyup", "Enter");
@@ -227,10 +231,63 @@ function isPlainTextInput(element: HTMLInputElement, mapping: FieldMapping): boo
   return !["birthDate", "startDate", "endDate", "availability"].includes(fieldKey);
 }
 
-function openCustomControl(root: HTMLElement, element: HTMLInputElement): void {
+async function openCustomControl(
+  root: HTMLElement,
+  element: HTMLInputElement,
+  targetValue: string
+): Promise<void> {
   element.focus();
-  clickElement(root);
-  clickElement(element);
+
+  // 日期/下拉组件的真实触发点不固定，可能在 input、日历图标或外层容器上。
+  for (const target of getCustomControlClickTargets(root, element)) {
+    clickElement(target);
+    await waitForPageToSettle(140);
+    if (isPopupReadyForTarget(targetValue)) {
+      return;
+    }
+  }
+
+  // 部分可输入 select 只监听键盘打开事件，额外补一次 ArrowDown。
+  dispatchKeyboardEvent(element, "keydown", "ArrowDown");
+  dispatchKeyboardEvent(element, "keyup", "ArrowDown");
+  await waitForPageToSettle(140);
+}
+
+function getCustomControlClickTargets(
+  root: HTMLElement,
+  element: HTMLInputElement
+): HTMLElement[] {
+  const triggers = Array.from(
+    root.querySelectorAll<HTMLElement>(
+      [
+        ".phoenix-select__switchArrow",
+        ".phoenix-select__arrow",
+        ".phoenix-date-picker__suffix",
+        ".ant-picker-suffix",
+        ".ant-select-arrow",
+        ".el-input__suffix",
+        ".ivu-select-arrow",
+        "[class*='switchArrow']",
+        "[class*='picker'] [class*='suffix']",
+        "[aria-label*='calendar' i]",
+        "[title*='calendar' i]",
+        "svg"
+      ].join(",")
+    )
+  );
+
+  return uniqueElements([element, ...triggers, root]);
+}
+
+function uniqueElements(elements: HTMLElement[]): HTMLElement[] {
+  return elements.filter((element, index, list) => list.indexOf(element) === index);
+}
+
+function isPopupReadyForTarget(targetValue: string): boolean {
+  if (parseYearMonth(targetValue)) {
+    return Boolean(findYearMonthPanel() ?? findYearPanel() ?? findMonthOnlyPanel());
+  }
+  return Boolean(findMatchingPopupOption(targetValue));
 }
 
 function clickElement(element: HTMLElement): void {
@@ -239,17 +296,35 @@ function clickElement(element: HTMLElement): void {
   element.click();
 }
 
-async function selectYearMonthFromPopup(targetValue: string): Promise<boolean> {
+async function selectYearMonthFromPopup(
+  targetValue: string,
+  input?: HTMLInputElement
+): Promise<boolean> {
   const target = parseYearMonth(targetValue);
   if (!target) {
     return false;
   }
 
+  if (await selectMonthFromYearMonthPanel(target)) {
+    ensureYearMonthValue(input, target);
+    return true;
+  }
+
+  if (await selectYearThenMonth(target)) {
+    ensureYearMonthValue(input, target);
+    return true;
+  }
+
+  return false;
+}
+
+async function selectMonthFromYearMonthPanel(target: YearMonthTarget): Promise<boolean> {
   let panel = findYearMonthPanel();
   if (!panel) {
     return false;
   }
 
+  // 年月弹层只能逐年切换，所以设置步数上限，避免页面异常时无限循环。
   for (let step = 0; step < 30; step += 1) {
     const currentYear = readPanelYear(panel);
     if (!currentYear || currentYear === target.year) {
@@ -280,6 +355,41 @@ async function selectYearMonthFromPopup(targetValue: string): Promise<boolean> {
   return true;
 }
 
+async function selectYearThenMonth(target: YearMonthTarget): Promise<boolean> {
+  const yearPanel = findYearPanel();
+  const yearCell = yearPanel ? findYearCell(yearPanel, target.year) : undefined;
+  if (!yearCell) {
+    return false;
+  }
+
+  clickElement(yearCell);
+  await waitForPageToSettle(180);
+
+  const monthPanel = findYearMonthPanel() ?? findMonthOnlyPanel();
+  const monthCell = monthPanel ? findMonthCell(monthPanel, target.month) : undefined;
+  if (!monthCell) {
+    return false;
+  }
+
+  clickElement(monthCell);
+  await waitForPageToSettle(120);
+  return true;
+}
+
+function ensureYearMonthValue(
+  input: HTMLInputElement | undefined,
+  target: YearMonthTarget
+): void {
+  if (!input || input.value.trim()) {
+    return;
+  }
+  setInputValue(input, formatYearMonth(target));
+}
+
+function formatYearMonth(target: YearMonthTarget): string {
+  return `${target.year}-${String(target.month).padStart(2, "0")}`;
+}
+
 function parseYearMonth(value: string): YearMonthTarget | undefined {
   const text = value.trim();
   const match = text.match(/((?:19|20)\d{2})\D{0,4}(0?[1-9]|1[0-2])(?:\D|$)/);
@@ -296,6 +406,7 @@ function parseYearMonth(value: string): YearMonthTarget | undefined {
 }
 
 function findYearMonthPanel(): HTMLElement | undefined {
+  // 通过“YYYY/ YYYY年 + 多个月份”识别年月选择器面板，兼容截图中标题只有“2026”的控件。
   const panels = Array.from(document.body.querySelectorAll<HTMLElement>("*"))
     .filter((element) => isVisibleElement(element))
     .map((element) => ({
@@ -303,24 +414,73 @@ function findYearMonthPanel(): HTMLElement | undefined {
       text: compactText(element.textContent ?? "")
     }))
     .filter(({ text }) => {
-      const monthCount = (text.match(/(?:^|\D)(?:0?[1-9]|1[0-2])月/g) ?? []).length;
-      return /(?:19|20)\d{2}年/.test(text) && monthCount >= 6 && text.length <= 500;
+      return hasYearText(text) && countMonthTexts(text) >= 6 && text.length <= 500;
     })
     .sort((a, b) => a.text.length - b.text.length);
 
   return panels[0]?.element;
 }
 
+function findMonthOnlyPanel(): HTMLElement | undefined {
+  const panels = Array.from(document.body.querySelectorAll<HTMLElement>("*"))
+    .filter((element) => isVisibleElement(element))
+    .map((element) => ({
+      element,
+      text: compactText(element.textContent ?? "")
+    }))
+    .filter(({ text }) => countMonthTexts(text) >= 6 && text.length <= 500)
+    .sort((a, b) => a.text.length - b.text.length);
+
+  return panels[0]?.element;
+}
+
+function findYearPanel(): HTMLElement | undefined {
+  const panels = Array.from(document.body.querySelectorAll<HTMLElement>("*"))
+    .filter((element) => isVisibleElement(element))
+    .map((element) => ({
+      element,
+      text: compactText(element.textContent ?? "")
+    }))
+    .filter(({ text }) => countYearTexts(text) >= 3 && countMonthTexts(text) < 6 && text.length <= 500)
+    .sort((a, b) => a.text.length - b.text.length);
+
+  return panels[0]?.element;
+}
+
+function countMonthTexts(text: string): number {
+  return (text.match(/(?:^|\D)(?:0?[1-9]|1[0-2])月/g) ?? []).length;
+}
+
+function countYearTexts(text: string): number {
+  return extractYearTexts(text).length;
+}
+
 function readPanelYear(panel: HTMLElement): number | undefined {
-  const match = compactText(panel.textContent ?? "").match(/((?:19|20)\d{2})年/);
-  return match ? Number(match[1]) : undefined;
+  return extractYearTexts(compactText(panel.textContent ?? ""))[0];
+}
+
+function hasYearText(text: string): boolean {
+  return extractYearTexts(text).length > 0;
+}
+
+function extractYearTexts(text: string): number[] {
+  const years: number[] = [];
+  const regex = /(?:^|[^\d])((?:19|20)\d{2})(?:年|(?=$|[^\d]))/g;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(text))) {
+    years.push(Number(match[1]));
+  }
+  return years;
 }
 
 function findYearStepButton(panel: HTMLElement, direction: -1 | 1): HTMLElement | undefined {
   const candidates = Array.from(
     panel.querySelectorAll<HTMLElement>("button, [role='button'], a, span, div")
   ).filter((element) => isVisibleElement(element));
-  const signal = direction < 0 ? /«|‹|<|上一|上年|prev|previous|left/i : /»|›|>|下一|下年|next|right/i;
+  const signal =
+    direction < 0
+      ? /«|‹|<|上一|上年|prev|previous|left|back/i
+      : /»|›|>|下一|下年|next|right|forward/i;
 
   const textHit = candidates.find((element) => signal.test(buildElementSignalText(element)));
   if (textHit) {
@@ -343,6 +503,7 @@ function findEdgeClickableInPanel(
   candidates: HTMLElement[],
   direction: -1 | 1
 ): HTMLElement | undefined {
+  // 有些年份箭头没有文字，只能根据面板顶部左右位置猜测上一年/下一年按钮。
   const panelRect = panel.getBoundingClientRect();
   const topLimit = panelRect.top + panelRect.height * 0.3;
   const topCandidates = candidates
@@ -353,16 +514,37 @@ function findEdgeClickableInPanel(
   return topCandidates[0]?.element;
 }
 
-function findMonthCell(panel: HTMLElement, month: number): HTMLElement | undefined {
-  const monthText = `${month}月`;
+function findYearCell(panel: HTMLElement, year: number): HTMLElement | undefined {
   const cells = Array.from(
     panel.querySelectorAll<HTMLElement>("button, [role='button'], td, li, span, div")
   ).filter((element) => isVisibleElement(element));
-  const cell = cells.find((element) => compactText(element.textContent ?? "") === monthText);
+  const cell = cells.find((element) => matchesYearText(element.textContent ?? "", year));
   if (!cell) {
     return undefined;
   }
   return cell.closest<HTMLElement>("button, [role='button'], td, li") ?? cell;
+}
+
+function matchesYearText(text: string, year: number): boolean {
+  const normalized = compactText(text).replace(/\s+/g, "");
+  return normalized === `${year}` || normalized === `${year}年`;
+}
+
+function findMonthCell(panel: HTMLElement, month: number): HTMLElement | undefined {
+  const cells = Array.from(
+    panel.querySelectorAll<HTMLElement>("button, [role='button'], td, li, span, div")
+  ).filter((element) => isVisibleElement(element));
+  const cell = cells.find((element) => matchesMonthText(element.textContent ?? "", month));
+  if (!cell) {
+    return undefined;
+  }
+  return cell.closest<HTMLElement>("button, [role='button'], td, li") ?? cell;
+}
+
+function matchesMonthText(text: string, month: number): boolean {
+  const normalized = compactText(text).replace(/\s+/g, "");
+  const match = normalized.match(/^(0?[1-9]|1[0-2])月?$/);
+  return match ? Number(match[1]) === month : false;
 }
 
 function findMatchingPopupOption(targetValue: string): HTMLElement | undefined {
@@ -404,6 +586,7 @@ function setNativeValue(
   element: HTMLInputElement | HTMLTextAreaElement,
   value: string
 ): void {
+  // React/Vue 受控输入框需要调用原生 value setter，否则只改 element.value 可能不触发框架状态。
   const prototype = Object.getPrototypeOf(element);
   const descriptor = Object.getOwnPropertyDescriptor(prototype, "value");
   if (descriptor?.set) {

@@ -8,14 +8,16 @@ const ARK_API_URL =
 const ARK_MODEL =
   process.env.ARK_MODEL ||
   process.env.AI_MATCHING_MODEL ||
-  "doubao-seed-2-0-code-preview-260215";
+  "doubao-seed-2-1-pro-260628";
+const ARK_TIMEOUT_MS = readPositiveInteger(process.env.ARK_TIMEOUT_MS, 30000);
 const MAX_REQUEST_BYTES = 1024 * 1024;
 
-// hello,我是冲突。
+// 本地 AI 代理服务：扩展请求这里，服务端再带 ARK_API_KEY 调火山方舟。
 const server = http.createServer(async (req, res) => {
   setCorsHeaders(res);
 
   if (req.method === "OPTIONS") {
+    // 处理浏览器跨域预检请求。
     res.writeHead(204);
     res.end();
     return;
@@ -42,7 +44,9 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    console.log(`[${requestId}] Calling Ark API...`);
+    console.log(
+      `[${requestId}] Calling Ark API... model=${ARK_MODEL}, timeout=${ARK_TIMEOUT_MS}ms`
+    );
     const rawText = await callArkChatCompletion(apiKey, body);
     const parsed = parseJsonObject(rawText);
     const safeResponse = normalizeAiResponse(parsed, body);
@@ -58,6 +62,7 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, HOST, () => {
   console.log(`Ark matching server listening on http://${HOST}:${PORT}`);
   console.log(`Model: ${ARK_MODEL}`);
+  console.log(`Ark API timeout: ${ARK_TIMEOUT_MS}ms`);
 });
 
 function setCorsHeaders(res) {
@@ -66,7 +71,13 @@ function setCorsHeaders(res) {
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 }
 
+function readPositiveInteger(value, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? Math.round(number) : fallback;
+}
+
 function readJsonBody(req) {
+  // 限制请求体大小，避免异常页面把过大的 DOM 文本发到后端。
   return new Promise((resolve, reject) => {
     let raw = "";
     req.setEncoding("utf8");
@@ -123,6 +134,15 @@ function callArkChatCompletion(apiKey, matchingPayload) {
   };
 
   return new Promise((resolve, reject) => {
+    let settled = false;
+    const timeout = setTimeout(() => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      req.destroy(new Error(`Ark API timeout after ${ARK_TIMEOUT_MS}ms`));
+    }, ARK_TIMEOUT_MS);
+
     const req = https.request(requestOptions, (res) => {
       let raw = "";
       res.setEncoding("utf8");
@@ -130,6 +150,11 @@ function callArkChatCompletion(apiKey, matchingPayload) {
         raw += chunk;
       });
       res.on("end", () => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        clearTimeout(timeout);
         if (!res.statusCode || res.statusCode < 200 || res.statusCode >= 300) {
           reject(new Error(`Ark API returned ${res.statusCode}: ${raw.slice(0, 300)}`));
           return;
@@ -144,13 +169,21 @@ function callArkChatCompletion(apiKey, matchingPayload) {
       });
     });
 
-    req.on("error", reject);
+    req.on("error", (error) => {
+      if (settled && !String(error.message || "").includes("timeout")) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timeout);
+      reject(error);
+    });
     req.write(requestBody);
     req.end();
   });
 }
 
 function buildPrompt(payload) {
+  // 提示词要求模型只做“映射建议”，不能编造字段，也不能直接执行填写。
   return [
     "请根据简历字段和网页字段候选，判断哪些未匹配/需确认字段可以映射到网页字段。",
     "只返回 JSON，不要 Markdown，不要解释。",
@@ -168,6 +201,7 @@ function buildPrompt(payload) {
 }
 
 function extractMessageText(data) {
+  // 火山方舟有时返回字符串 content，有时是多段 content；这里统一取出文本。
   const content = data && data.choices && data.choices[0] && data.choices[0].message
     ? data.choices[0].message.content
     : undefined;
@@ -187,6 +221,7 @@ function extractMessageText(data) {
 }
 
 function parseJsonObject(text) {
+  // 模型偶尔会包一层 Markdown 代码块，这里只提取最外层 JSON 对象。
   const cleaned = String(text)
     .replace(/^```json\s*/i, "")
     .replace(/^```\s*/i, "")
@@ -201,6 +236,7 @@ function parseJsonObject(text) {
 }
 
 function normalizeAiResponse(response, requestPayload) {
+  // 后端再次校验 AI 返回的 path/id 必须来自请求，防止模型编造 DOM 字段。
   const allowedPaths = new Set(
     Array.isArray(requestPayload.resumeFields)
       ? requestPayload.resumeFields.map((field) => field.path)
@@ -251,6 +287,7 @@ function createRequestId() {
 }
 
 function logMatchRequest(requestId, body) {
+  // 只打印数量，不打印真实字段内容或 token，方便确认是否真的调用了 AI。
   const resumeCount = Array.isArray(body.resumeFields) ? body.resumeFields.length : 0;
   const pageCount = Array.isArray(body.pageFields) ? body.pageFields.length : 0;
   console.log(

@@ -33,6 +33,7 @@ type SectionItemMap = {
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
+// options 页负责维护本地简历模板和 AI 后端地址；不会保存任何 API Key。
 export default function App(): JSX.Element {
   const [profile, setProfile] = useState<ResumeProfile>(() => createDefaultResumeProfile());
   const [aiSettings, setAiSettings] = useState<AiMatchingSettings>({
@@ -44,6 +45,7 @@ export default function App(): JSX.Element {
   const filledFields = useMemo(() => flattenResumeProfile(profile).length, [profile]);
 
   useEffect(() => {
+    // 进入页面时同时加载简历和 AI 设置，保证“保存”会写回完整配置。
     void Promise.all([getResumeProfile(), getAiMatchingSettings()]).then(
       ([storedProfile, storedAiSettings]) => {
         setProfile(storedProfile);
@@ -95,6 +97,7 @@ export default function App(): JSX.Element {
     id: string,
     patch: Partial<SectionItemMap[K]>
   ): void {
+    // section item 通过 id 更新，避免数组顺序变化时误改其他记录。
     setProfile((current) => {
       const sectionData = current[section];
       return {
@@ -127,6 +130,7 @@ export default function App(): JSX.Element {
       const sectionData = current[section];
       const items = sectionData.items as Array<{ id: string }>;
       const nextItems = items.filter((item) => item.id !== id);
+      // 每个可重复模块至少保留一条记录，页面结构更稳定。
       return {
         ...current,
         [section]: {
@@ -143,6 +147,7 @@ export default function App(): JSX.Element {
 
   function importJson(): void {
     try {
+      // 导入时走 normalize，兼容老 schema 或缺字段 JSON。
       const parsed = JSON.parse(jsonDraft) as Partial<ResumeProfile>;
       setProfile(normalizeResumeProfile(parsed));
       setSaveState("idle");
@@ -313,6 +318,7 @@ function TextField({
   multiline = false,
   wide = false
 }: TextFieldProps): JSX.Element {
+  // 简单字段组件：用 label 包裹 input/textarea，便于 options 页本身也可测试。
   return (
     <label className={wide ? "field wide" : "field"}>
       <span>{label}</span>
@@ -340,6 +346,7 @@ function RepeatSection<T extends { id: string }>({
   onRemove,
   render
 }: RepeatSectionProps<T>): JSX.Element {
+  // 教育、工作、语言三类重复模块共用同一个渲染容器。
   return (
     <section className="sectionBand">
       <div className="sectionHeading">

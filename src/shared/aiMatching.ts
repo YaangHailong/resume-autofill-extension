@@ -20,10 +20,12 @@ const AI_MATCH_MIN_CONFIDENCE = 50;
 const MAX_AI_RESUME_FIELDS = 30;
 const MAX_AI_PAGE_FIELDS = 120;
 const MAX_AI_OPTIONS_PER_FIELD = 40;
+const AI_REQUEST_TIMEOUT_MS = 35000;
 const MAX_TEXT_LENGTH = 160;
 
 export type AiFetch = (input: string, init: RequestInit) => Promise<Response>;
 
+// AI 增强只在用户开启时运行，并且只作为本地规则之后的兜底步骤。
 export async function enhanceFillPlanWithAi(
   plan: FillPlan,
   candidates: FieldCandidate[],
@@ -54,6 +56,7 @@ export async function enhanceFillPlanWithAi(
     });
   }
 
+  // fetcher 参数用于单元测试注入假请求，浏览器运行时使用 globalThis.fetch。
   const activeFetch = fetcher ?? globalThis.fetch?.bind(globalThis);
   if (!activeFetch) {
     return withAiMeta(plan, {
@@ -65,14 +68,24 @@ export async function enhanceFillPlanWithAi(
     });
   }
 
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
   try {
+    const abortController = createAbortController();
+    timeoutId = abortController
+      ? setTimeout(() => abortController.abort(), AI_REQUEST_TIMEOUT_MS)
+      : undefined;
     const response = await activeFetch(endpoint, {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
       },
-      body: JSON.stringify(requestPayload)
+      body: JSON.stringify(requestPayload),
+      signal: abortController?.signal
     });
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+      timeoutId = undefined;
+    }
 
     if (!response.ok) {
       throw new Error(`AI 后端返回 ${response.status}`);
@@ -81,7 +94,7 @@ export async function enhanceFillPlanWithAi(
     const aiResponse = (await response.json()) as AiMatchingResponsePayload;
     return applyAiSuggestions(plan, candidates, aiResponse, endpoint);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "AI 增强匹配失败。";
+    const message = normalizeAiError(error);
     return withAiMeta(plan, {
       enabled: true,
       attempted: true,
@@ -89,13 +102,29 @@ export async function enhanceFillPlanWithAi(
       endpoint,
       error: message
     });
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
   }
+}
+
+function createAbortController(): AbortController | undefined {
+  return typeof AbortController === "undefined" ? undefined : new AbortController();
+}
+
+function normalizeAiError(error: unknown): string {
+  if (error instanceof Error && error.name === "AbortError") {
+    return `AI 后端请求超过 ${AI_REQUEST_TIMEOUT_MS / 1000} 秒未返回，请检查 Ark 服务、网络或模型配置。`;
+  }
+  return error instanceof Error ? error.message : "AI 增强匹配失败。";
 }
 
 export function buildAiMatchingRequest(
   plan: FillPlan,
   candidates: FieldCandidate[]
 ): AiMatchingRequestPayload {
+  // 只把未确认字段发给 AI，避免高确定性字段被模型重新改写。
   const resumeFields = plan.mappings
     .filter((mapping) => mapping.status !== "confirmed")
     .slice(0, MAX_AI_RESUME_FIELDS)
@@ -134,6 +163,7 @@ export function applyAiSuggestions(
     }, new Map());
 
   const mappings = plan.mappings.map((mapping) => {
+    // 本地规则已经 confirmed 的字段不允许 AI 覆盖，降低误填风险。
     if (mapping.status === "confirmed") {
       return mapping;
     }
@@ -153,6 +183,7 @@ export function applyAiSuggestions(
     }
 
     if (usedCandidateIds.has(candidate.id)) {
+      // 同一个网页控件只能分配给一个简历字段，避免重复填入。
       if (mapping.candidateId) {
         usedCandidateIds.add(mapping.candidateId);
       }
@@ -193,6 +224,7 @@ function toAiResumeFieldPayload(mapping: FieldMapping): AiResumeFieldPayload {
 }
 
 function toAiPageFieldPayload(candidate: FieldCandidate): AiPageFieldPayload {
+  // 发给 AI 的是页面结构和语义提示，不包含真实 targetValue、手机号、邮箱等简历值。
   const textForSemantics = [
     candidate.labelText,
     candidate.placeholder,
@@ -245,6 +277,7 @@ function createAiMapping(
 }
 
 function isValidSuggestion(suggestion: AiFieldSuggestion): boolean {
+  // 过滤低置信度或格式不完整的建议，后端异常返回也不会污染 FillPlan。
   return (
     typeof suggestion.resumePath === "string" &&
     typeof suggestion.candidateId === "string" &&
